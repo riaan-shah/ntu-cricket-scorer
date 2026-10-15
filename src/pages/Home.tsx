@@ -11,11 +11,11 @@ export default function Home() {
   const settings = useSettings();
   const auth = useAuth();
   const matches = useMatches() ?? [];
-  const { nameOf, players } = usePlayerNames();
+  const { nameOf, players, map } = usePlayerNames();
   const live = matches.filter((m) => m.status === 'live');
   const recent = matches.filter((m) => m.status !== 'live').slice(0, 3);
   const leaders = useMemo(() => {
-    const stats = [...computeCareerStats(matches).values()];
+    const stats = [...computeCareerStats(matches).values()].filter((s) => !map.get(s.playerId)?.archived);
     const top = (title: string, f: (s: (typeof stats)[number]) => number, unit: (v: number) => string) => {
       const best = [...stats].sort((a, b) => f(b) - f(a))[0];
       return best && f(best) > 0 ? [{ title, id: best.playerId, value: unit(f(best)) }] : [];
@@ -25,7 +25,7 @@ export default function Home() {
       ...top('Most wickets', (s) => s.bowl.wickets, (v) => `${v} wkt${v === 1 ? '' : 's'}`),
       ...top('Top MVP', (s) => s.impact, (v) => `${v.toFixed(1)} impact`),
     ];
-  }, [matches]);
+  }, [matches, map]);
 
   return (
     <div>
@@ -65,7 +65,7 @@ export default function Home() {
           </Link>
           <Link to="/players" className="tile">
             <span className="ico">👥</span>Players
-            <span className="tiny muted">{players.length}</span>
+            <span className="tiny muted">{players.filter((p) => !p.archived).length}</span>
           </Link>
           <Link to="/leaderboard" className="tile">
             <span className="ico">🏆</span>Leaderboard

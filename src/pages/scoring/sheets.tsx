@@ -513,7 +513,7 @@ export function AddPlayerSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose: () 
         }}
       />
       <PlayerPickList
-        options={players.filter((p) => !inTeam(p.id)).map((p) => ({ id: p.id }))}
+        options={players.filter((p) => !p.archived && !inTeam(p.id)).map((p) => ({ id: p.id }))}
         onPick={add}
         nameOf={nameOf}
         empty="Everyone in the club is already in this team"

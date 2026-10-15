@@ -85,7 +85,7 @@ const BOARDS: Record<'bat' | 'bowl' | 'other', Board[]> = {
 
 export default function Leaderboard() {
   const matches = useMatches() ?? [];
-  const { nameOf } = usePlayerNames();
+  const { nameOf, map } = usePlayerNames();
   const years = useMemo(() => [...new Set(matches.map((m) => m.date.slice(0, 4)))].sort().reverse(), [matches]);
   const [season, setSeason] = useState('all');
   const [cat, setCat] = useState<'bat' | 'bowl' | 'other'>('bat');
@@ -96,6 +96,7 @@ export default function Leaderboard() {
   );
   const board = BOARDS[cat].find((b) => b.key === boardKey) ?? BOARDS[cat][0];
   const rows = stats
+    .filter((s) => !map.get(s.playerId)?.archived)
     .filter((s) => (board.eligible ? board.eligible(s) : board.value(s) > 0))
     .sort((a, b) => (board.asc ? board.value(a) - board.value(b) : board.value(b) - board.value(a)))
     .slice(0, 25);

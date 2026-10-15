@@ -10,6 +10,8 @@ export interface Player {
   role?: PlayerRole;
   battingStyle?: 'Right-hand bat' | 'Left-hand bat';
   bowlingStyle?: string;
+  /** Removed from the roster but kept so old scorecards still show the name. */
+  archived?: boolean;
   createdAt: number;
   updatedAt: number;
 }

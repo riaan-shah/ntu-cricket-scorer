@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PlayerPickList } from '../components/PlayerPick';
 import { AppBar, Avatar, Seg, Sheet, toast } from '../components/ui';
-import { deletePlayer, mergePlayers, playerMatchCount, savePlayer, useMatches, usePlayerNames } from '../db';
+import { mergePlayers, playersWithHistory, restorePlayer, savePlayer, useMatches, usePlayerNames } from '../db';
+import { RemoveConfirm } from './Players';
 import {
   batAverage,
   batStrikeRate,
@@ -91,6 +92,7 @@ export default function PlayerProfile() {
   const [tab, setTab] = useState<'bat' | 'bowl' | 'field'>('bat');
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const { canScore } = useAuth();
   const player = id ? map.get(id) : undefined;
   if (!player) return <AppBar title="Player" back="/players" />;
@@ -109,16 +111,8 @@ export default function PlayerProfile() {
     </div>
   );
 
-  const remove = async () => {
-    const n = await playerMatchCount(player.id);
-    if (n > 0) {
-      alert(`${player.name} has played ${n} match(es). Merge them into another profile instead of deleting.`);
-      return;
-    }
-    if (!confirm(`Delete ${player.name}?`)) return;
-    await deletePlayer(player.id);
-    nav('/players', { replace: true });
-  };
+  const remove = () => setRemoving(true);
+
 
   return (
     <div>
@@ -143,6 +137,24 @@ export default function PlayerProfile() {
         </div>
       </div>
       <div className="page">
+        {player.archived && (
+          <div className="card card-pad row">
+            <div style={{ flex: 1 }} className="small">
+              <b>Removed player.</b> Hidden from the roster and leaderboards; kept so old scorecards show the name.
+            </div>
+            {canScore && (
+              <button
+                className="btn sm"
+                onClick={async () => {
+                  await restorePlayer(player);
+                  toast('Restored to the roster');
+                }}
+              >
+                Restore
+              </button>
+            )}
+          </div>
+        )}
         <div className="card">
           {grid([
             ['Matches', s?.matches ?? 0],
@@ -278,9 +290,11 @@ export default function PlayerProfile() {
           <button className="btn sm" onClick={() => setMerging(true)}>
             Merge duplicate…
           </button>
-          <button className="btn sm danger" onClick={remove}>
-            Delete
-          </button>
+          {!player.archived && (
+            <button className="btn sm danger" onClick={remove}>
+              Remove
+            </button>
+          )}
         </div>
         )}
       </div>
@@ -298,6 +312,14 @@ export default function PlayerProfile() {
           />
         </Sheet>
       )}
+      {removing && (
+        <RemoveConfirm
+          players={[player]}
+          history={playersWithHistory(matches)}
+          onCancel={() => setRemoving(false)}
+          onDone={() => nav('/players', { replace: true })}
+        />
+      )}
       {merging && (
         <Sheet open title={`Merge ${player.name} into…`} onClose={() => setMerging(false)}>
           <div className="small muted">
@@ -305,7 +327,7 @@ export default function PlayerProfile() {
             when the same person was added twice.
           </div>
           <PlayerPickList
-            options={players.filter((p) => p.id !== player.id).map((p) => ({ id: p.id }))}
+            options={players.filter((p) => p.id !== player.id && !p.archived).map((p) => ({ id: p.id }))}
             nameOf={nameOf}
             onPick={async (into) => {
               if (!confirm(`Merge ${player.name} into ${nameOf(into)}? This can't be undone.`)) return;

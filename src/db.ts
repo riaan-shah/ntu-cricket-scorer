@@ -36,13 +36,31 @@ export async function savePlayer(p: Player) {
   await backend.putPlayer({ ...p, updatedAt: Date.now() });
 }
 
-export async function playerMatchCount(id: ID): Promise<number> {
-  const all = await backend.getAllMatches();
-  return all.filter((m) => m.teams.some((t) => t.playerIds.includes(id))).length;
+/** IDs of everyone who appears in any match (live, completed or abandoned). */
+export function playersWithHistory(matches: Match[]): Set<ID> {
+  const ids = new Set<ID>();
+  for (const m of matches) for (const t of m.teams) for (const id of t.playerIds) ids.add(id);
+  return ids;
 }
 
-export async function deletePlayer(id: ID) {
-  await backend.deletePlayer(id);
+/**
+ * Removes players from the club. Players who never played are deleted; players with match history are archived
+ * (hidden from the roster and leaderboards) so old scorecards keep their names.
+ */
+export async function removePlayers(ids: ID[]) {
+  const [players, matches] = await Promise.all([backend.getAllPlayers(), backend.getAllMatches()]);
+  const history = playersWithHistory(matches);
+  const now = Date.now();
+  const archive = players
+    .filter((p) => ids.includes(p.id) && history.has(p.id))
+    .map((p) => ({ ...p, archived: true, updatedAt: now }));
+  const remove = ids.filter((id) => !history.has(id));
+  await backend.bulkPut(archive, [], remove);
+  return { archived: archive.length, deleted: remove.length };
+}
+
+export async function restorePlayer(p: Player) {
+  await backend.putPlayer({ ...p, archived: false, updatedAt: Date.now() });
 }
 
 /** Rewrites every reference to `fromId` in a match as `intoId`. */
@@ -161,6 +179,12 @@ function useSubscription<T>(subscribe: (cb: (v: T) => void) => () => void, deps:
 
 export function usePlayers(): Player[] {
   return useSubscription(backend.subscribePlayers, [], [] as Player[]);
+}
+
+/** Active club members (excludes removed/archived players). */
+export function useRoster(): Player[] {
+  const players = usePlayers();
+  return useMemo(() => players.filter((p) => !p.archived), [players]);
 }
 
 export function usePlayerNames() {

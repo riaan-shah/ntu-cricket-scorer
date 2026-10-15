@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { createPlayer } from '../db';
+import { createPlayer, restorePlayer } from '../db';
 import type { ID, Player } from '../types';
 import { Avatar, toast } from './ui';
 
@@ -64,6 +64,10 @@ export function NewPlayerInline({
     // Clear before awaiting so fast typists don't lose the next name.
     setName('');
     if (existing) {
+      if (existing.archived) {
+        await restorePlayer(existing);
+        toast(`${existing.name} restored to the roster`);
+      }
       onAdd(existing);
     } else {
       const p = await createPlayer(trimmed);

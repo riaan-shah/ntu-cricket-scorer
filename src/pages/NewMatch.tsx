@@ -41,7 +41,7 @@ export default function NewMatch() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return players.filter((p) => !q || p.name.toLowerCase().includes(q));
+    return players.filter((p) => !p.archived && (!q || p.name.toLowerCase().includes(q)));
   }, [players, query]);
 
   const setSide = (id: ID, side: Side) => {
