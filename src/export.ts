@@ -1,4 +1,4 @@
-import { oversText, type MatchState } from './engine/engine';
+import { inningsLabel, oversText, type MatchState } from './engine/engine';
 import { computeMvp } from './engine/impact';
 import type { Match } from './types';
 
@@ -54,7 +54,7 @@ export function textSummary(
   lines.push('');
   for (const inn of state.innings) {
     lines.push(
-      `*${m.teams[inn.battingTeam].name}* ${inn.runs}/${inn.wickets} (${oversText(inn.legalBalls, bpo)} ov)`,
+      `*${m.teams[inn.battingTeam].name}*${inn.superOver ? ' (' + inningsLabel(inn.index) + ')' : ''} ${inn.runs}/${inn.wickets} (${oversText(inn.legalBalls, bpo)} ov)`,
     );
     const bats = [...inn.batters].sort((a, b) => b.runs - a.runs || a.balls - b.balls).slice(0, 3);
     for (const b of bats)

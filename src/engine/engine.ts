@@ -26,6 +26,8 @@ export const DEFAULT_RULES: MatchRules = {
   noConsecutiveOvers: true,
 };
 
+export const SUPER_OVER_WICKETS = 2;
+
 export interface Dismissal {
   type: DismissalType;
   bowlerId?: ID;
@@ -111,6 +113,7 @@ export type CompleteReason = 'overs' | 'allout' | 'target' | 'declared';
 
 export interface InningsState {
   index: number;
+  superOver: boolean;
   battingTeam: TeamIdx;
   bowlingTeam: TeamIdx;
   started: boolean;
@@ -193,7 +196,10 @@ export function replayInnings(match: Match, index: number, target: number | null
   const bowlingTeam = (1 - battingTeam) as TeamIdx;
   const squad = match.teams[battingTeam].playerIds;
   const opposition = match.teams[bowlingTeam].playerIds;
-  const rebatsAllowed = rules.rebatWhenShort ? Math.max(0, opposition.length - squad.length) : 0;
+  // Super over: one over, two wickets, no extra batting turns, no last man standing.
+  const superOver = !!inn.superOver || index >= 2;
+  const lastManStands = rules.lastManStands && !superOver;
+  const rebatsAllowed = rules.rebatWhenShort && !superOver ? Math.max(0, opposition.length - squad.length) : 0;
 
   const batters: BatterLine[] = [];
   const latest = new Map<ID, BatterLine>();
@@ -494,14 +500,16 @@ export function replayInnings(match: Match, index: number, target: number | null
     const crease = [striker, nonStriker].filter(Boolean) as BatterLine[];
     if (crease.length === 0 && availableBatters.length === 0) allOut = true;
     else if (crease.length === 1 && availableBatters.length === 0) {
-      if (rules.lastManStands) {
+      if (lastManStands) {
         striker = crease[0];
         nonStriker = null;
       } else allOut = true;
     }
   }
 
-  const maxBalls = rules.overs * bpo;
+  if (started && superOver && wickets >= SUPER_OVER_WICKETS) allOut = true;
+
+  const maxBalls = superOver ? bpo : rules.overs * bpo;
   let completeReason: CompleteReason | undefined;
   if (declared) completeReason = 'declared';
   else if (target !== null && runs >= target) completeReason = 'target';
@@ -517,11 +525,12 @@ export function replayInnings(match: Match, index: number, target: number | null
     else if (!bowlerId) needs = 'bowler';
   }
 
-  const battingTurns = squad.length + rebatsAllowed;
-  const wicketsInHand = Math.max(0, battingTurns - (rules.lastManStands ? 0 : 1) - wickets);
+  const battingTurns = superOver ? Math.min(squad.length, SUPER_OVER_WICKETS + 1) : squad.length + rebatsAllowed;
+  const wicketsInHand = Math.max(0, battingTurns - (lastManStands ? 0 : 1) - wickets);
 
   return {
     index,
+    superOver,
     battingTeam,
     bowlingTeam,
     started,
@@ -565,14 +574,15 @@ export interface MatchState {
 export function computeMatch(match: Match): MatchState {
   const innings: InningsState[] = [];
   match.innings.forEach((_, i) => {
-    const target = i === 1 ? innings[0].runs + 1 : null;
+    // Innings come in pairs (main match, then any super overs): the second of each pair chases the first.
+    const target = i % 2 === 1 ? innings[i - 1].runs + 1 : null;
     innings.push(replayInnings(match, i, target));
   });
   const current = innings[innings.length - 1] ?? null;
   let phase: MatchPhase = 'innings';
   let result: MatchResult | null = null;
   if (current?.complete) {
-    if (innings.length === 1) phase = 'break';
+    if (innings.length % 2 === 1) phase = 'break';
     else {
       phase = 'result';
       result = computeResult(match, innings);
@@ -582,7 +592,18 @@ export function computeMatch(match: Match): MatchState {
 }
 
 export function computeResult(match: Match, innings: InningsState[]): MatchResult {
-  const [a, b] = innings;
+  const main = pairResult(match, innings[0], innings[1]);
+  // Super overs only matter if the main match is tied (an edited ball can un-tie it).
+  if (innings.length < 4 || main.winner !== null) return main;
+  // Decided by the latest completed super over.
+  const so = pairResult(match, innings[innings.length - 2], innings[innings.length - 1]);
+  const n = innings.length / 2 - 1;
+  const label = n > 1 ? `Super Over ${n}` : 'Super Over';
+  if (so.winner === null) return { winner: null, text: `Match tied · ${label} tied`, superOver: true };
+  return { winner: so.winner, text: `Match tied · ${match.teams[so.winner].name} won the ${label}`, superOver: true };
+}
+
+function pairResult(match: Match, a: InningsState, b: InningsState): MatchResult {
   const nameA = match.teams[a.battingTeam].name;
   const nameB = match.teams[b.battingTeam].name;
   if (b.runs > a.runs) {
@@ -604,6 +625,17 @@ export function computeResult(match: Match, innings: InningsState[]): MatchResul
   return { winner: null, text: 'Match tied' };
 }
 
+/** Starts a super over after a tie: the side that batted second in the tied pair bats first (ICC playing conditions). */
+export function startSuperOver(match: Match): Match {
+  const last = match.innings[match.innings.length - 1];
+  return { ...match, innings: [...match.innings, { battingTeam: last.battingTeam, events: [], superOver: true }] };
+}
+
+export function inningsLabel(index: number): string {
+  if (index < 2) return index === 0 ? '1st innings' : '2nd innings';
+  const n = Math.floor(index / 2);
+  return `Super Over${n > 1 ? ' ' + n : ''}`;
+}
 /** Removes the last ball (and any batter/bowler selections made after it). */
 export function undoLast(match: Match): Match {
   const innings = match.innings.map((i) => ({ ...i, events: [...i.events] }));
@@ -640,4 +672,24 @@ export function economy(runs: number, balls: number, bpo: number): string {
 
 export function runRate(runs: number, balls: number, bpo: number): string {
   return balls === 0 ? '0.00' : ((runs * bpo) / balls).toFixed(2);
+}
+
+/**
+ * Replaces (or deletes, with `null`) one recorded ball. Later balls keep exactly who was on strike, so nothing
+ * else shifts. If an edit changes a finished match's outcome the stored result is refreshed; if the match is no
+ * longer decided it goes back to live.
+ */
+export function editBall(match: Match, inningsIndex: number, eventIndex: number, next: BallEvent | null): Match {
+  const innings = match.innings.map((inn, i) => {
+    if (i !== inningsIndex) return inn;
+    const events = [...inn.events];
+    if (next) events[eventIndex] = next;
+    else events.splice(eventIndex, 1);
+    return { ...inn, events };
+  });
+  const edited: Match = { ...match, innings };
+  if (match.status !== 'completed') return edited;
+  const st = computeMatch(edited);
+  if (st.phase === 'result' && st.result) return { ...edited, result: st.result };
+  return { ...edited, status: 'live', result: undefined };
 }

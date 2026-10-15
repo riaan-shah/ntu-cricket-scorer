@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from 'react';
-import { economy, oversText, runRate, strikeRate, type InningsState, type MatchState } from '../engine/engine';
-import { dismissalText, type NameOf } from '../engine/format';
+import { economy, inningsLabel, oversText, runRate, strikeRate, type InningsState, type MatchState } from '../engine/engine';
+import { captainMark, dismissalText, type NameOf } from '../engine/format';
 import { computeMvp, impactGrade } from '../engine/impact';
 import type { Match } from '../types';
 
@@ -71,7 +71,10 @@ export const ScorecardExport = forwardRef<
         <div className="sx-scores">
           {state.innings.map((inn) => (
             <div key={inn.index}>
-              <div className="n">{match.teams[inn.battingTeam].name}</div>
+              <div className="n">
+                {match.teams[inn.battingTeam].name}
+                {inn.superOver ? ' · Super Over' : ''}
+              </div>
               <div className="s">
                 {inn.runs}/{inn.wickets} <small>({oversText(inn.legalBalls, bpo)} ov)</small>
               </div>
@@ -161,7 +164,7 @@ function InningsCard({ match, inn, nameOf }: { match: Match; inn: InningsState; 
     <div className="sx-innings">
       <div className="sx-inn-title">
         <span>
-          {team.name} · {inn.index === 0 ? '1st' : '2nd'} innings
+          {team.name} · {inningsLabel(inn.index)}
         </span>
         <span>
           {inn.runs}/{inn.wickets} ({oversText(inn.legalBalls, bpo)} ov)
@@ -184,6 +187,7 @@ function InningsCard({ match, inn, nameOf }: { match: Match; inn: InningsState; 
               <td>
                 <div className="nm">
                   {nameOf(b.playerId)}
+                  {captainMark(match, inn.battingTeam, b.playerId)}
                   {b.stint > 1 ? ' (2nd turn)' : ''}
                 </div>
                 <div className="dm">{dismissalText(b, nameOf)}</div>
@@ -246,7 +250,10 @@ function InningsCard({ match, inn, nameOf }: { match: Match; inn: InningsState; 
         <tbody>
           {inn.bowlers.map((b) => (
             <tr key={b.playerId}>
-              <td className="nm">{nameOf(b.playerId)}</td>
+              <td className="nm">
+                {nameOf(b.playerId)}
+                {captainMark(match, inn.bowlingTeam, b.playerId)}
+              </td>
               <td>{oversText(b.balls, bpo)}</td>
               <td>{b.maidens}</td>
               <td>{b.runs}</td>

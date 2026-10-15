@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from 'react';
-import { oversText, oversTextFull, type InningsState, type MatchState } from '../engine/engine';
-import type { NameOf } from '../engine/format';
+import { inningsLabel, oversText, oversTextFull, type InningsState, type MatchState } from '../engine/engine';
+import { captainMark, type NameOf } from '../engine/format';
 import { computeMvp } from '../engine/impact';
 import type { ID, Match } from '../types';
 import { topBowlers } from './ScorecardExport';
@@ -47,9 +47,18 @@ export const SummaryCard = forwardRef<
 
       <div className={`sm-grid ${motm ? '' : 'no-motm'}`}>
         <div className="sm-left">
-          {state.innings.map((inn, i) => (
+          {state.innings.slice(0, 2).map((inn, i) => (
             <InningsBlock key={inn.index} match={match} inn={inn} color={INNINGS_COLORS[i]} nameOf={nameOf} />
           ))}
+          {state.innings.length > 2 && (
+            <div className="sm-so">
+              {state.innings.slice(2).map((inn) => (
+                <span key={inn.index}>
+                  ⚡ {inningsLabel(inn.index)}: <b>{match.teams[inn.battingTeam].name}</b> {inn.runs}/{inn.wickets}
+                </span>
+              ))}
+            </div>
+          )}
           <div className={`sm-result ${result ? (result.winner === null ? 'tie' : '') : 'live'}`}>
             {result ? <ResultText text={result.text} /> : 'Match in progress'}
           </div>
@@ -88,7 +97,10 @@ function InningsBlock({ match, inn, color, nameOf }: { match: Match; inn: Inning
         <div className="sm-col">
           {bats.map((b) => (
             <div className="sm-row" key={b.playerId}>
-              <span className="sm-name">{nameOf(b.playerId)}</span>
+              <span className="sm-name">
+                {nameOf(b.playerId)}
+                {captainMark(match, inn.battingTeam, b.playerId)}
+              </span>
               <span>
                 <b style={{ color }}>{b.runs}</b> <span className="sm-muted">({b.balls})</span>
                 {b.notOut ? '*' : ''}
@@ -100,7 +112,10 @@ function InningsBlock({ match, inn, color, nameOf }: { match: Match; inn: Inning
         <div className="sm-col">
           {bowls.map((b) => (
             <div className="sm-row" key={b.playerId}>
-              <span className="sm-name">{nameOf(b.playerId)}</span>
+              <span className="sm-name">
+                {nameOf(b.playerId)}
+                {captainMark(match, inn.bowlingTeam, b.playerId)}
+              </span>
               <b style={{ color }}>
                 {b.wickets}/{b.runs}
               </b>

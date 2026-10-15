@@ -2,13 +2,26 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ScorecardExport, topBatters, topBowlers } from '../components/ScorecardExport';
 import { AppBar, askConfirm, Avatar, BallChip, Sheet, toast } from '../components/ui';
-import { deleteMatch, saveMatch, useClubPar, useMatch, usePlayerNames, useSettings } from '../db';
+import {
+  BIN_DAYS,
+  binDaysLeft,
+  binMatch,
+  deleteMatchForever,
+  restoreMatch,
+  saveMatch,
+  useClubPar,
+  useMatch,
+  usePlayerNames,
+  useSettings,
+} from '../db';
 import { useAuth } from '../data/auth';
-import { computeMatch, oversText } from '../engine/engine';
+import { computeMatch, inningsLabel, oversText } from '../engine/engine';
 import { ballNumber, commentary } from '../engine/format';
 import { computeMvp } from '../engine/impact';
 import { HeroesCard, MvpTable } from '../components/Mvp';
 import { PressureChart } from '../components/PressureChart';
+import { BallEditSheet } from '../components/BallEditor';
+import { getDeviceId } from '../data/lock';
 import { SummaryCard } from '../components/SummaryCard';
 import { downloadText, exportNodeAsImage, matchFileName, textSummary } from '../export';
 
@@ -20,10 +33,11 @@ export default function MatchView() {
   const match = useMatch(id);
   const { nameOf } = usePlayerNames();
   const settings = useSettings();
-  const { canScore } = useAuth();
+  const { canScore, isAdmin } = useAuth();
   const [tab, setTab] = useState<Tab>('summary');
   const [busy, setBusy] = useState(false);
   const [motmOpen, setMotmOpen] = useState(false);
+  const [editing, setEditing] = useState<{ inn: number; ev: number } | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const state = useMemo(() => (match ? computeMatch(match) : null), [match]);
@@ -37,6 +51,16 @@ export default function MatchView() {
   if (!match || !state || !mvp) return null;
   const bpo = match.rules.ballsPerOver;
   const result = match.result ?? state.result;
+
+  // Ball edits: scorers only, not in the bin, and not while another device holds a live match's scoring lock.
+  const canEdit = canScore && !match.deletedAt;
+  const openEditor = (inn: number, ev: number) => {
+    if (match.status === 'live' && match.scorer && match.scorer.device !== getDeviceId()) {
+      toast(`${match.scorer.name} is scoring this match — take over on the scoring screen to edit`);
+      return;
+    }
+    setEditing({ inn, ev });
+  };
 
   const shareImage = async (kind: 'summary' | 'scorecard') => {
     const node = kind === 'summary' ? summaryRef.current : exportRef.current;
@@ -81,15 +105,16 @@ export default function MatchView() {
           <b>
             {match.teams[0].name} v {match.teams[1].name}
           </b>{' '}
-          ({match.date}) will be removed for everyone, along with the player stats from it. This can't be undone.
+          ({match.date}) moves to the bin and stops counting towards stats. You can restore it from{' '}
+          <b>Matches → Bin</b> for {BIN_DAYS} days.
         </>
       ),
-      confirmLabel: 'Delete match',
+      confirmLabel: 'Move to bin',
       danger: true,
     });
     if (!ok) return;
-    await deleteMatch(match.id);
-    toast('Match deleted');
+    await binMatch(match);
+    toast(`Moved to bin — restorable for ${BIN_DAYS} days`);
     nav('/matches', { replace: true });
   };
 
@@ -105,6 +130,47 @@ export default function MatchView() {
       </div>
 
       <div className="page">
+        {match.deletedAt && (
+          <div className="card card-pad stack" style={{ borderColor: 'var(--accent)' }}>
+            <div className="bold">🗑 This match is in the bin</div>
+            <div className="small muted">
+              It doesn't count towards stats and will be deleted for good in {binDaysLeft(match)} day
+              {binDaysLeft(match) === 1 ? '' : 's'}.
+            </div>
+            {canScore && (
+              <div className="row wrap">
+                <button
+                  className="btn primary sm"
+                  onClick={async () => {
+                    await restoreMatch(match);
+                    toast('Match restored');
+                  }}
+                >
+                  ↺ Restore match
+                </button>
+                {isAdmin && (
+                  <button
+                    className="btn danger sm"
+                    onClick={async () => {
+                      const ok = await askConfirm({
+                        title: 'Delete forever?',
+                        message: 'This permanently removes the match and every ball in it. This cannot be undone.',
+                        confirmLabel: 'Delete forever',
+                        danger: true,
+                      });
+                      if (!ok) return;
+                      await deleteMatchForever(match.id);
+                      toast('Match deleted permanently');
+                      nav('/matches', { replace: true });
+                    }}
+                  >
+                    Delete forever
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {/* Export bar */}
         <div className="row wrap no-print">
           {match.status === 'live' && canScore && (
@@ -190,7 +256,9 @@ export default function MatchView() {
             {state.innings.map((inn) => (
               <div className="card" key={inn.index}>
                 <div className="card-head">
-                  <h2>{match.teams[inn.battingTeam].name} innings · top performers</h2>
+                  <h2>
+                    {match.teams[inn.battingTeam].name} · {inn.superOver ? inningsLabel(inn.index) : 'innings'} · top performers
+                  </h2>
                 </div>
                 {topBatters(inn, 3).map((b) => (
                   <Link className="list-item" key={b.key} to={`/players/${b.playerId}`}>
@@ -228,12 +296,12 @@ export default function MatchView() {
               {match.teams.map((t, i) => (
                 <div key={i} className="card-pad small">
                   <b>{t.name}</b> ({t.playerIds.length}):{' '}
-                  {t.playerIds.map((pid) => nameOf(pid)).join(', ')}
+                  {t.playerIds.map((pid) => nameOf(pid) + (t.captainId === pid ? ' (c)' : '')).join(', ')}
                 </div>
               ))}
             </div>
 
-            {canScore && (
+            {canScore && !match.deletedAt && (
             <div className="row wrap no-print">
               {match.status !== 'live' && (
                 <button className="btn sm" onClick={reopen}>
@@ -253,11 +321,24 @@ export default function MatchView() {
             {[...state.innings].reverse().map((inn) => (
               <div className="card" key={inn.index}>
                 <div className="card-head">
-                  <h2>{match.teams[inn.battingTeam].name} innings</h2>
+                  <h2>
+                    {match.teams[inn.battingTeam].name} · {inningsLabel(inn.index)}
+                  </h2>
                 </div>
                 {inn.balls.length === 0 && <div className="empty small">No balls bowled yet</div>}
+                {canEdit && inn.balls.length > 0 && (
+                  <div className="tiny muted" style={{ padding: '8px 14px 0' }}>
+                    Tap a ball to correct it.
+                  </div>
+                )}
                 {[...inn.balls].reverse().map((b) => (
-                  <div key={b.eventIndex} className="list-item" style={{ cursor: 'default', alignItems: 'flex-start' }}>
+                  <div
+                    key={b.eventIndex}
+                    className="list-item"
+                    style={{ cursor: canEdit ? 'pointer' : 'default', alignItems: 'flex-start' }}
+                    role={canEdit ? 'button' : undefined}
+                    onClick={canEdit ? () => openEditor(inn.index, b.eventIndex) : undefined}
+                  >
                     <span className="tiny muted bold" style={{ minWidth: 34, paddingTop: 8 }}>
                       {ballNumber(b, bpo)}
                     </span>
@@ -282,7 +363,9 @@ export default function MatchView() {
             {state.innings.map((inn) => (
               <div className="card" key={inn.index}>
                 <div className="card-head">
-                  <h2>{match.teams[inn.battingTeam].name} · overs</h2>
+                  <h2>
+                    {match.teams[inn.battingTeam].name} · {inningsLabel(inn.index)} · overs
+                  </h2>
                 </div>
                 {inn.overs.map((o) => (
                   <div key={o.overNo} className="over-strip" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -344,6 +427,21 @@ export default function MatchView() {
         />
       </div>
 
+      {editing && (
+        <BallEditSheet
+          match={match}
+          inningsIndex={editing.inn}
+          eventIndex={editing.ev}
+          nameOf={nameOf}
+          onClose={() => setEditing(null)}
+          onSave={async (next) => {
+            await saveMatch(next);
+            if (match.status === 'completed' && next.status === 'live') toast('Ball updated — the match is no longer decided, so it was reopened');
+            else if (match.result?.text !== next.result?.text && next.result) toast(`Ball updated — result is now: ${next.result.text}`);
+            else toast('Ball updated');
+          }}
+        />
+      )}
       {motmOpen && (
         <Sheet open title="Player of the match" onClose={() => setMotmOpen(false)}>
           <div className="small muted">

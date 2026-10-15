@@ -1,4 +1,4 @@
-import type { DismissalType, ID } from '../types';
+import type { DismissalType, ID, Match, TeamIdx } from '../types';
 import type { BallView, BatterLine } from './engine';
 
 export type NameOf = (id: ID | undefined | null) => string;
@@ -89,4 +89,9 @@ export function initials(name: string): string {
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join('');
+}
+
+/** " (c)" after a team's captain, as on a printed scorecard. */
+export function captainMark(match: Match, team: TeamIdx, playerId: ID): string {
+  return match.teams[team].captainId === playerId ? ' (c)' : '';
 }

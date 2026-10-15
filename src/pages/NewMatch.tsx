@@ -6,6 +6,7 @@ import { useAuth } from '../data/auth';
 import { RulesEditor } from '../components/RulesEditor';
 import { AppBar, Avatar, Seg, toast } from '../components/ui';
 import { saveMatch, uid, useMatches, usePlayers, useSettings } from '../db';
+import { CaptainSelect } from '../components/CaptainSelect';
 import { OversPicker } from '../components/OversPicker';
 import type { ID, Match, MatchRules, TeamIdx } from '../types';
 
@@ -20,6 +21,8 @@ export default function NewMatch() {
   const [nameA, setNameA] = useState('Team A');
   const [nameB, setNameB] = useState('Team B');
   const [sides, setSides] = useState<Map<ID, Side>>(new Map());
+  const [captainA, setCaptainA] = useState<ID | undefined>();
+  const [captainB, setCaptainB] = useState<ID | undefined>();
   const [query, setQuery] = useState('');
   const [rules, setRules] = useState<MatchRules | null>(null);
   const [overs, setOvers] = useState<number | null>(null);
@@ -73,6 +76,7 @@ export default function NewMatch() {
   };
 
   const short = teamA.length - teamB.length;
+  const nameOf = (id: ID) => players.find((p) => p.id === id)?.name ?? 'Unknown';
 
   if (!auth.canScore) {
     return (
@@ -96,8 +100,16 @@ export default function NewMatch() {
       createdAt: now,
       updatedAt: now,
       teams: [
-        { name: nameA.trim() || 'Team A', playerIds: teamA },
-        { name: nameB.trim() || 'Team B', playerIds: teamB },
+        {
+          name: nameA.trim() || 'Team A',
+          playerIds: teamA,
+          captainId: captainA && teamA.includes(captainA) ? captainA : undefined,
+        },
+        {
+          name: nameB.trim() || 'Team B',
+          playerIds: teamB,
+          captainId: captainB && teamB.includes(captainB) ? captainB : undefined,
+        },
       ],
       rules: { ...effRules, overs: effOvers },
       toss: { winner: tossWinner, decision },
@@ -199,6 +211,25 @@ export default function NewMatch() {
               );
             })}
           </div>
+
+          {teamA.length > 0 && teamB.length > 0 && (
+            <div className="card card-pad grid-2">
+              <CaptainSelect
+                label={`${nameA || 'Team A'} captain`}
+                playerIds={teamA}
+                value={captainA}
+                onChange={setCaptainA}
+                nameOf={nameOf}
+              />
+              <CaptainSelect
+                label={`${nameB || 'Team B'} captain`}
+                playerIds={teamB}
+                value={captainB}
+                onChange={setCaptainB}
+                nameOf={nameOf}
+              />
+            </div>
+          )}
 
           <button
             className="btn primary big block"

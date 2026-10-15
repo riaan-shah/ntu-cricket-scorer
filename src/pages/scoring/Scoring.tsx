@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AppBar, askConfirm, BallChip, Sheet, toast } from '../../components/ui';
-import { deleteMatch, saveMatch, useClubPar, useMatchWithMeta, usePlayerNames } from '../../db';
+import { BIN_DAYS, binMatch, saveMatch, useClubPar, useMatchWithMeta, usePlayerNames } from '../../db';
 import { useAuth } from '../../data/auth';
+import { getDeviceId, lockHeldByOther, timeAgo } from '../../data/lock';
 import {
   computeMatch,
   economy,
@@ -10,9 +11,13 @@ import {
   oversTextFull,
   runRate,
   strikeRate,
+  inningsLabel,
+  startSuperOver,
   undoLast,
 } from '../../engine/engine';
 import { computeMvp, currentPressure } from '../../engine/impact';
+import { BallEditSheet } from '../../components/BallEditor';
+import { captainMark } from '../../engine/format';
 import { HeroesCard, MvpTable, PressureBadge } from '../../components/Mvp';
 import type { ExtraType, Match, ScoreEvent, TeamIdx } from '../../types';
 import {
@@ -51,14 +56,34 @@ export default function Scoring() {
   const matchRef = useRef<Match | null>(null);
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [hideForced, setHideForced] = useState(false);
+  const [editingBall, setEditingBall] = useState<number | null>(null);
+
+  // Scorer lock (cloud mode): one device holds the pen; others watch and can take over.
+  const lockOn = auth.mode === 'cloud' && !!auth.user;
+  const deviceId = useMemo(getDeviceId, []);
+  const me = auth.user ? { email: auth.user.email, name: auth.user.name, device: deviceId } : null;
 
   useEffect(() => {
-    if (stored && !matchRef.current) {
+    if (!stored) return;
+    // Until this device holds the pen, always show the latest synced copy (another scorer's balls, or a newer
+    // server version than the offline cache). Once we hold it, our own saves echo back and are ignored, so
+    // in-flight balls are never replaced by an older copy.
+    if (!matchRef.current || (lockOn && stored.scorer?.device !== deviceId)) {
       matchRef.current = stored;
       setMatch(stored);
     }
-  }, [stored]);
+  }, [stored, lockOn, deviceId]);
 
+  // Nobody is scoring this live match: claim it — but only from a server-confirmed copy, never a possibly-stale
+  // offline cache. (Offline, the first ball recorded takes the lock instead.)
+  useEffect(() => {
+    if (!lockOn || !me || !stored || !meta || meta.fromCache) return;
+    if (stored.status !== 'live' || stored.deletedAt || stored.scorer) return;
+    const next = { ...stored, scorer: { ...me, at: Date.now() } };
+    matchRef.current = next;
+    setMatch(next);
+    void saveMatch(next);
+  }, [lockOn, stored, meta, me?.device]);
   const state = useMemo(() => (match ? computeMatch(match) : null), [match]);
 
   // Re-show mandatory prompts whenever the score changes.
@@ -75,13 +100,33 @@ export default function Scoring() {
     );
   }
   if (!match || !state || !auth.ready) return null;
-  if (match.status !== 'live' || !auth.canScore) return <Navigate to={`/match/${match.id}`} replace />;
+  if (match.status !== 'live' || !auth.canScore || match.deletedAt) return <Navigate to={`/match/${match.id}`} replace />;
+
+  const holder = match.scorer;
+  const lockedOut = lockOn && lockHeldByOther(holder, deviceId);
 
   const mutate = (fn: (m: Match) => Match) => {
-    const next = fn(matchRef.current!);
+    const current = matchRef.current!;
+    if (lockOn && lockHeldByOther(current.scorer, deviceId)) {
+      toast(`${current.scorer.name} is scoring this match — take over first`);
+      return;
+    }
+    let next = fn(current);
+    // Stamp the lock on every save while live; release it when the match finishes or is abandoned.
+    if (lockOn && me) next = { ...next, scorer: next.status === 'live' ? { ...me, at: Date.now() } : undefined };
     matchRef.current = next;
     setMatch(next);
     void saveMatch(next);
+  };
+  const takeOver = () => {
+    if (!me) return;
+    // Build on the latest synced copy so we don't drop balls the previous scorer already uploaded.
+    const base = stored ?? matchRef.current!;
+    const next = { ...base, scorer: { ...me, at: Date.now() } };
+    matchRef.current = next;
+    setMatch(next);
+    void saveMatch(next);
+    toast("You're now scoring this match");
   };
   const append = (ev: ScoreEvent) =>
     mutate((m) => ({
@@ -115,7 +160,7 @@ export default function Scoring() {
   };
 
   const live = state.phase === 'innings';
-  const canScore = live && !cur.needs;
+  const canScore = live && !cur.needs && !lockedOut;
 
   const runs = (n: number, boundary = false) => {
     if (!canScore) return;
@@ -145,7 +190,7 @@ export default function Scoring() {
   const ballsLeft = cur.maxBalls - cur.legalBalls;
   const bowlerLine = cur.bowlers.find((b) => b.playerId === (cur.bowlerId ?? cur.lastOverBowlerId));
 
-  const forced = live && !hideForced ? cur.needs : null;
+  const forced = live && !hideForced && !lockedOut ? cur.needs : null;
   const pressure = currentPressure(match, state, clubParRate);
   const closeForced = () => setHideForced(true);
 
@@ -167,17 +212,52 @@ export default function Scoring() {
         }
       />
 
+      {lockedOut && holder && (
+        <div className="lock-banner">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="bold">
+              📝 Being scored by {holder.name}
+              {auth.user && holder.email === auth.user.email ? ' on another device' : ''}
+            </div>
+            <div className="tiny">Last ball saved {timeAgo(holder.at)}. You're watching live.</div>
+          </div>
+          <button
+            className="btn sm"
+            onClick={async () => {
+              const ok = await askConfirm({
+                title: 'Take over scoring?',
+                message: (
+                  <>
+                    <b>{holder.name}</b> will be switched to watching and won't be able to score until they take it back.
+                    If their phone has no signal, balls they've recorded but not yet uploaded could be lost, so check with
+                    them first.
+                  </>
+                ),
+                confirmLabel: 'Take over',
+              });
+              if (ok) takeOver();
+            }}
+          >
+            Take over
+          </button>
+        </div>
+      )}
+
       {/* ---------- Score header ---------- */}
       <div className="score-hero">
         <div className="team">
-          {batTeam.name} · {cur.index === 0 ? '1st' : '2nd'} innings
+          {batTeam.name} · {inningsLabel(cur.index)}
         </div>
         <div className="big">
           {cur.runs}/{cur.wickets}
           <small>
-            <button className="overs-link" onClick={() => setSheet('overs')} title="Change overs">
-              ({oversTextFull(cur.legalBalls, bpo)}/{rules.overs} ✎)
-            </button>
+            {cur.superOver ? (
+              <>({oversTextFull(cur.legalBalls, bpo)}/1)</>
+            ) : (
+              <button className="overs-link" onClick={() => setSheet('overs')} title="Change overs">
+                ({oversTextFull(cur.legalBalls, bpo)}/{rules.overs} ✎)
+              </button>
+            )}
           </small>
         </div>
         <div className="meta">
@@ -233,6 +313,7 @@ export default function Scoring() {
                     <tr key={l.key} className={i === 0 ? 'on-strike' : ''}>
                       <td className="name">
                         {nameOf(l.playerId)}
+                        {captainMark(match, cur.battingTeam, l.playerId)}
                         {l.stint > 1 && <span className="badge gold" style={{ marginLeft: 6 }}>2nd turn</span>}
                       </td>
                       <td className="bold">{l.runs}</td>
@@ -282,6 +363,7 @@ export default function Scoring() {
                   <tr>
                     <td className="name">
                       {nameOf(bowlerLine.playerId)}
+                      {captainMark(match, cur.bowlingTeam, bowlerLine.playerId)}
                       {cur.bowlerId === null && <span className="tiny muted"> (last over)</span>}
                     </td>
                     <td>{oversText(bowlerLine.balls, bpo)}</td>
@@ -309,7 +391,11 @@ export default function Scoring() {
               <span className="tiny muted bold" style={{ marginRight: 4 }}>
                 {showOver ? `Over ${showOver.overNo + 1}` : 'This over'}
               </span>
-              {showOver?.balls.map((b) => <BallChip key={b.eventIndex} ball={b} />)}
+              {showOver?.balls.map((b) => (
+                <button key={b.eventIndex} className="ball-btn" onClick={() => !lockedOut && setEditingBall(b.eventIndex)} title="Edit this ball">
+                  <BallChip ball={b} />
+                </button>
+              ))}
               {showOver && <span className="tiny muted">= {showOver.runs}</span>}
             </div>
           </div>
@@ -371,7 +457,7 @@ export default function Scoring() {
             </div>
           </div>
 
-          <RecentBalls ctx={ctx} />
+          <RecentBalls ctx={ctx} onEdit={lockedOut ? undefined : setEditingBall} />
         </div>
       )}
 
@@ -389,6 +475,19 @@ export default function Scoring() {
       {sheet === 'addPlayer' && <AddPlayerSheet ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet === 'settings' && <MatchSettingsSheet ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet === 'overs' && <OversSheet ctx={ctx} onClose={() => setSheet(null)} />}
+      {editingBall !== null && (
+        <BallEditSheet
+          match={match}
+          inningsIndex={cur.index}
+          eventIndex={editingBall}
+          nameOf={nameOf}
+          onClose={() => setEditingBall(null)}
+          onSave={(next) => {
+            mutate(() => next);
+            toast('Ball updated');
+          }}
+        />
+      )}
       {sheet === 'changeBowler' && <BowlerSheet ctx={ctx} mode="change" onClose={() => setSheet(null)} />}
       {sheet === 'customRuns' && <CustomRunsSheet onRuns={(n) => runs(n)} onClose={() => setSheet(null)} />}
       {sheet === 'more' && (
@@ -442,13 +541,13 @@ export default function Scoring() {
                     case 'delete':
                       void askConfirm({
                         title: 'Delete this match?',
-                        message: `${match.teams[0].name} v ${match.teams[1].name} will be removed for everyone, including every ball scored so far. This can't be undone.`,
-                        confirmLabel: 'Delete match',
+                        message: `${match.teams[0].name} v ${match.teams[1].name} moves to the bin and stops counting towards stats. You can restore it from Matches → Bin for ${BIN_DAYS} days.`,
+                        confirmLabel: 'Move to bin',
                         danger: true,
                       }).then(async (ok) => {
                         if (!ok) return;
-                        await deleteMatch(match.id);
-                        toast('Match deleted');
+                        await binMatch(matchRef.current!);
+                        toast(`Moved to bin — restorable for ${BIN_DAYS} days`);
                         nav('/', { replace: true });
                       });
                       break;
@@ -500,7 +599,7 @@ function CustomRunsSheet({ onRuns, onClose }: { onRuns: (n: number) => void; onC
   );
 }
 
-function RecentBalls({ ctx }: { ctx: ScoringCtx }) {
+function RecentBalls({ ctx, onEdit }: { ctx: ScoringCtx; onEdit?: (eventIndex: number) => void }) {
   const overs = ctx.cur.overs.slice(-4).reverse();
   if (overs.length === 0) return null;
   return (
@@ -516,37 +615,49 @@ function RecentBalls({ ctx }: { ctx: ScoringCtx }) {
           <span className="tiny muted" style={{ minWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {ctx.nameOf(o.bowlerId)}
           </span>
-          {o.balls.map((b) => (
-            <BallChip key={b.eventIndex} ball={b} />
-          ))}
+          {o.balls.map((b) =>
+            onEdit ? (
+              <button key={b.eventIndex} className="ball-btn" onClick={() => onEdit(b.eventIndex)} title="Edit this ball">
+                <BallChip ball={b} />
+              </button>
+            ) : (
+              <BallChip key={b.eventIndex} ball={b} />
+            ),
+          )}
           <span className="tiny muted">= {o.runs}</span>
         </div>
       ))}
+      {onEdit && <div className="tiny muted" style={{ padding: '6px 14px 10px' }}>Tap any ball to correct it.</div>}
     </div>
   );
 }
 
 function InningsBreak({ match, ctx, onChangeOvers }: { match: Match; ctx: ScoringCtx; onChangeOvers: () => void }) {
-  const first = ctx.state.innings[0];
+  const first = ctx.state.innings[ctx.state.innings.length - 1];
   const chasing = (1 - first.battingTeam) as TeamIdx;
   const bpo = match.rules.ballsPerOver;
+  const nextLabel = first.superOver ? `${match.teams[chasing].name}'s super over` : '2nd innings';
   return (
     <div className="page">
       <div className="card card-pad stack center">
-        <div className="section-title">Innings break</div>
+        <div className="section-title">{first.superOver ? `${inningsLabel(first.index)} · halfway` : 'Innings break'}</div>
         <div style={{ fontSize: 22, fontWeight: 800 }}>
           {match.teams[first.battingTeam].name} {first.runs}/{first.wickets} ({oversText(first.legalBalls, bpo)} ov)
         </div>
         <div>
-          <b>{match.teams[chasing].name}</b> need <b>{first.runs + 1}</b> runs from {match.rules.overs * bpo} balls
+          <b>{match.teams[chasing].name}</b> need <b>{first.runs + 1}</b> runs from {first.maxBalls} balls
+          {first.superOver && <> (2 wickets)</>}
         </div>
         <button
           className="btn primary big block"
           onClick={() =>
-            ctx.mutate((m) => ({ ...m, innings: [...m.innings, { battingTeam: chasing, events: [] }] }))
+            ctx.mutate((m) => ({
+              ...m,
+              innings: [...m.innings, { battingTeam: chasing, events: [], ...(first.superOver ? { superOver: true } : {}) }],
+            }))
           }
         >
-          Start 2nd innings
+          Start {nextLabel}
         </button>
         <div className="grid-2">
           <button className="btn" onClick={ctx.undo}>
@@ -579,11 +690,22 @@ function MatchOver({
     nav(`/match/${match.id}`, { replace: true });
   };
   const heroes = { ...mvp.heroes, potm: motm, fighter: mvp.heroes.fighter === motm ? undefined : mvp.heroes.fighter };
+  const tied = ctx.state.result?.winner === null;
   return (
     <div className="page">
       <div className="card card-pad stack center">
         <div className="section-title">Match over</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--brand-2)' }}>{ctx.state.result?.text}</div>
+        {tied && (
+          <>
+            <div className="small muted">
+              Scores are level. Play a super over: {match.teams[ctx.cur.battingTeam].name} bat first, one over, two wickets.
+            </div>
+            <button className="btn primary big block" onClick={() => ctx.mutate(startSuperOver)}>
+              ⚡ Play {ctx.state.innings.length > 2 ? 'another ' : 'a '}super over
+            </button>
+          </>
+        )}
       </div>
       <HeroesCard heroes={heroes} players={mvp.players} nameOf={ctx.nameOf} />
       <div className="card">
@@ -593,8 +715,8 @@ function MatchOver({
         </div>
         <MvpTable players={mvp.players} nameOf={ctx.nameOf} selected={motm} onSelect={setMotm} limit={8} />
       </div>
-      <button className="btn primary big block" onClick={finish}>
-        Finish & save match
+      <button className={`btn ${tied ? '' : 'primary'} big block`} onClick={finish}>
+        {tied ? 'Finish as a tie' : 'Finish & save match'}
       </button>
       <div className="grid-2">
         <button className="btn" onClick={ctx.undo}>
@@ -607,7 +729,7 @@ function MatchOver({
 }
 /** Offered when an innings ended on overs: lets the scorer agree to play more (any number). */
 function ChangeOversButton({ ctx, onClick }: { ctx: ScoringCtx; onClick: () => void }) {
-  if (ctx.cur.completeReason !== 'overs') return <Link className="btn" to={`/match/${ctx.match.id}`}>Scorecard</Link>;
+  if (ctx.cur.completeReason !== 'overs' || ctx.cur.superOver) return <Link className="btn" to={`/match/${ctx.match.id}`}>Scorecard</Link>;
   return (
     <button className="btn" onClick={onClick}>
       ＋ Add overs

@@ -35,15 +35,15 @@ Screen** so it works offline at the cage.
    - Strike rotates automatically on odd runs and at the end of each over. Consecutive overs and bowler quotas are blocked,
      with an "Allow anyway" override.
 6. **Innings break**: shows the target and lets you **＋ Add overs** (any number) if you agree to extend.
-7. **Match over**: the result is worked out automatically ("won by N runs" or "won by N wickets (B balls left)"). The Heroes
+7. **Tie → super over**: if scores are level you can play a super over (one over, two wickets; the side that batted\n   second bats first, as in ICC playing conditions) or finish as a tie. A tied super over can be followed by another.\n   Super-over runs and wickets count for MVP but not career records.\n8. **Match over**: the result is worked out automatically ("won by N runs" or "won by N wickets (B balls left)"). The Heroes
    of the Match (Player of the Match, Best Batter, Best Bowler, Fighter) are picked by MVP 2.0 (see below), and you can
    change Player of the Match. Then **Finish & save**.
-8. **Match page**: Summary, Scorecard, ball-by-ball Commentary, Overs and partnerships.
+9. **Match page**: Summary, Scorecard, ball-by-ball Commentary, Overs and partnerships.
    **Share summary** (the club's navy and gold "Match Summary" graphic: top 3 batters and bowlers per innings, result
    bar, Man of the Match with his stats; on phones this opens the share sheet for WhatsApp/Instagram),
    **Scorecard image** (the full scorecard as a PNG), **PDF / Print**, **Copy summary** (text). The footer line on the
    summary graphic is set in Settings.
-   Completed matches can be reopened to fix mistakes.
+   **Fix any past ball**: tap a ball in Commentary (or in Recent overs while scoring) to change runs, extras,\n   boundary, who faced or bowled it, or dismissal details, or to delete a stray ball. Later balls keep who was on strike,\n   and a finished match's result updates automatically (it reopens if it's no longer decided). Adding or removing a\n   wicket still needs an undo back to that ball, because it changes who batted next.\n   **Captains**: pick one per team when setting up (or in Match settings); they show as (c) on scorecards and images.
 
 ## Club rules: how they're handled
 
@@ -113,13 +113,13 @@ Not yet tracked (CricHeroes treats these as scorer-dependent too): runs saved an
   - Admins: everything above, plus club settings and the scorer list (Settings → Scorers & admins).
 - The first person to sign in on a fresh project claims it as admin (Settings → Claim club as admin).
 - Sign-in is Google only. Every domain the site runs on must be listed in Firebase → Authentication → Settings → Authorized domains.
-- Two people scoring the *same* match at once isn't supported; the last save wins. Have one scorer per match.
+- **Scorer lock**: one device holds the pen for a live match. Anyone else opening it sees *Being scored by Riaan*\n  and watches live, with a **Take over** button (confirm first; balls the other phone hasn't uploaded yet could be lost).\n  The lock is per device, so the same person on two phones is protected too.
 
 **Backups** (optional extra safety): Settings → Download backup / Import / merge backup. Imports merge by id and the newest
 `updatedAt` wins, so nothing is deleted. Settings → Upload this phone's data moves anything scored before cloud sync into
 the club database.
 
-**Removing players:** Players → Select → Remove. Players with no matches are deleted. Players with match history are
+**Bin:** deleting a match moves it to **Matches → Bin** for 30 days (it stops counting towards stats). Scorers can\nrestore it; admins can delete forever. Anything older than 30 days is removed automatically.\n\n**Removing players:** Players → Select → Remove. Players with no matches are deleted. Players with match history are
 archived instead: hidden from the roster and leaderboards, but kept on old scorecards, and restorable from "Removed players".
 
 ## Architecture

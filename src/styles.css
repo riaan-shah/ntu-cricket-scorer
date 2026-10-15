@@ -1556,3 +1556,39 @@ select.input {
   padding: 0 6px;
   cursor: pointer;
 }
+.sm-so {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding: 12px 18px;
+  border: 1px solid #1f2b47;
+  border-left: 5px solid #f3f5fa;
+  background: rgba(10, 16, 32, 0.78);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--gold);
+  color: #2a1e00;
+}
+.lock-banner .btn {
+  flex: none;
+}
+
+.ball-btn {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 99px;
+  flex: none;
+}
+.ball-btn:hover .ball {
+  outline: 2px solid var(--brand-2);
+  outline-offset: 1px;
+}

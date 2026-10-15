@@ -198,7 +198,8 @@ export function computeCareerStats(matches: Match[]): Map<ID, CareerStats> {
         impact,
       });
     }
-    for (const inn of state.innings) addInnings(inn, get, perf);
+    // Super-over runs and wickets don't count towards career records (as in ICC statistics).
+    for (const inn of state.innings) if (!inn.superOver) addInnings(inn, get, perf);
     for (const [pid, p] of perf) get(pid).performances.push(p);
   }
   for (const s of stats.values()) s.performances.reverse();

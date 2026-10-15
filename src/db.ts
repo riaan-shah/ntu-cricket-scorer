@@ -121,8 +121,29 @@ export async function saveMatch(m: Match) {
   await backend.putMatch({ ...m, updatedAt: Date.now() });
 }
 
-export async function deleteMatch(id: ID) {
+/** Days a deleted match stays in the bin before it's removed for good. */
+export const BIN_DAYS = 30;
+
+/** "Delete": moves the match to the bin, where it can be restored for 30 days. */
+export async function binMatch(m: Match) {
+  await backend.putMatch({ ...m, deletedAt: Date.now(), scorer: undefined, updatedAt: Date.now() });
+}
+
+export async function restoreMatch(m: Match) {
+  await backend.putMatch({ ...m, deletedAt: undefined, updatedAt: Date.now() });
+}
+
+export async function deleteMatchForever(id: ID) {
   await backend.deleteMatch(id);
+}
+
+export function binDaysLeft(m: Match): number {
+  return Math.max(0, Math.ceil(BIN_DAYS - (Date.now() - (m.deletedAt ?? 0)) / 86_400_000));
+}
+
+/** Permanently removes matches that have been in the bin for more than 30 days. */
+export async function purgeExpiredBin(binned: Match[]) {
+  for (const m of binned) if (binDaysLeft(m) === 0) await deleteMatchForever(m.id);
 }
 
 // ---------- Settings ----------
@@ -197,9 +218,23 @@ export function usePlayerNames() {
   }, [players]);
 }
 
+function useAllMatches(): Match[] | undefined {
+  return useSubscription<Match[] | undefined>(backend.subscribeMatches, [], undefined);
+}
+
+/** All matches except those in the bin, newest first. */
 export function useMatches(): Match[] | undefined {
-  const all = useSubscription<Match[] | undefined>(backend.subscribeMatches, [], undefined);
-  return useMemo(() => all && [...all].sort(sortMatches), [all]);
+  const all = useAllMatches();
+  return useMemo(() => all && all.filter((m) => !m.deletedAt).sort(sortMatches), [all]);
+}
+
+/** Matches in the bin, most recently deleted first. */
+export function useBin(): Match[] {
+  const all = useAllMatches();
+  return useMemo(
+    () => (all ?? []).filter((m) => m.deletedAt).sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0)),
+    [all],
+  );
 }
 
 /** `undefined` while loading, `null` if the match doesn't exist. */

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { NewPlayerInline, PlayerPickList, type PickOption } from '../../components/PlayerPick';
+import { CaptainSelect } from '../../components/CaptainSelect';
 import { OversPicker } from '../../components/OversPicker';
 import { RulesEditor } from '../../components/RulesEditor';
 import { askConfirm, Seg, Sheet, ToggleRow, toast } from '../../components/ui';
@@ -82,10 +83,10 @@ export function StartSheet({ ctx }: { ctx: ScoringCtx }) {
   );
 
   return (
-    <Sheet open title={`${bat.name} innings · Openers`}>
+    <Sheet open title={`${bat.name} · ${cur.superOver ? 'Super over' : 'Openers'}`}>
       {cur.target !== null && (
         <div className="card card-pad small">
-          Target <b>{cur.target}</b> from {match.rules.overs} overs
+          Target <b>{cur.target}</b> from {cur.maxBalls} balls{cur.superOver ? ' · super over, 2 wickets' : ''}
         </div>
       )}
       <div className="grid-3">
@@ -531,6 +532,7 @@ export function MatchSettingsSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose:
   const { match } = ctx;
   const [rules, setRules] = useState(match.rules);
   const [names, setNames] = useState([match.teams[0].name, match.teams[1].name]);
+  const [captains, setCaptains] = useState([match.teams[0].captainId, match.teams[1].captainId]);
   return (
     <Sheet open title="Match settings" onClose={onClose}>
       <div className="grid-2">
@@ -545,6 +547,18 @@ export function MatchSettingsSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose:
           </label>
         ))}
       </div>
+      <div className="grid-2">
+        {match.teams.map((t, i) => (
+          <CaptainSelect
+            key={i}
+            label={`${names[i] || t.name} captain`}
+            playerIds={t.playerIds}
+            value={captains[i]}
+            onChange={(id) => setCaptains(captains.map((x, j) => (j === i ? id : x)))}
+            nameOf={ctx.nameOf}
+          />
+        ))}
+      </div>
       <RulesEditor rules={rules} onChange={setRules} lockFormat />
 
       <button
@@ -554,7 +568,7 @@ export function MatchSettingsSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose:
             ...m,
             // Overs have their own sheet; keep whatever they are now.
             rules: { ...rules, overs: m.rules.overs },
-            teams: m.teams.map((t, i) => ({ ...t, name: names[i].trim() || t.name })) as Match['teams'],
+            teams: m.teams.map((t, i) => ({ ...t, name: names[i].trim() || t.name, captainId: captains[i] })) as Match['teams'],
           }));
           toast('Match settings saved');
           onClose();

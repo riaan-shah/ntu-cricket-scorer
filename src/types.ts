@@ -126,11 +126,25 @@ export type ScoreEvent =
 export interface Innings {
   battingTeam: TeamIdx;
   events: ScoreEvent[];
+  /** Tie-breaker: one over, two wickets. Innings 3+ are always super overs. */
+  superOver?: boolean;
 }
 
 export interface MatchResult {
   winner: TeamIdx | null;
   text: string;
+  /** Decided (or still tied) in a super over. */
+  superOver?: boolean;
+}
+
+/** Who is currently scoring a live match (cloud mode), so two phones don't overwrite each other. */
+export interface ScorerLock {
+  email: string;
+  name: string;
+  /** Per-browser id: the same person on two phones is still two scorers. */
+  device: string;
+  /** Last time the holder saved (ms). */
+  at: number;
 }
 
 export type MatchStatus = 'live' | 'completed' | 'abandoned';
@@ -150,6 +164,9 @@ export interface Match {
   status: MatchStatus;
   result?: MatchResult;
   motmId?: ID;
+  /** Set when the match is in the bin (restorable for 30 days). */
+  deletedAt?: number;
+  scorer?: ScorerLock;
 }
 
 export interface ClubSettings {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BallEvent, Match, MatchRules, ScoreEvent } from '../types';
-import { computeMatch, DEFAULT_RULES, undoLast } from './engine';
+import { computeMatch, DEFAULT_RULES, editBall, startSuperOver, undoLast } from './engine';
 import { computeMvp } from './impact';
 import { computeCareerStats } from './stats';
 
@@ -262,5 +262,108 @@ describe('match flow', () => {
     expect(stats.get('a1')!.bat).toMatchObject({ innings: 1, runs: 8, fours: 2 });
     expect(stats.get('a1')!.bowl).toMatchObject({ balls: 4, runs: 10 });
     expect(stats.get('b1')!.bowl.wickets).toBe(1);
+  });
+});
+
+describe('super over', () => {
+  function tiedMatch() {
+    const m = makeMatch(['a1', 'a2', 'a3', 'a4'], ['b1', 'b2', 'b3', 'b4'], { overs: 1, ballsPerOver: 2 });
+    const s = scorer(m);
+    s.start('a1', 'a2', 'b1');
+    s.runs(4);
+    s.runs(2);
+    s.nextInnings();
+    s.start('b1', 'b2', 'a1');
+    s.runs(2);
+    s.runs(4);
+    return { m, s };
+  }
+
+  it('a tie can go to a super over, second-batting side bats first', () => {
+    const { m } = tiedMatch();
+    expect(computeMatch(m).result).toEqual({ winner: null, text: 'Match tied' });
+    const so = startSuperOver(m);
+    expect(so.innings[2]).toMatchObject({ battingTeam: 1, superOver: true });
+    expect(computeMatch(so).phase).toBe('innings');
+  });
+
+  it('super over is one over, ends at two wickets, and decides the match', () => {
+    const { m } = tiedMatch();
+    const so = startSuperOver(m);
+    const s = scorer(so);
+    s.start('b3', 'b4', 'a2');
+    s.runs(1);
+    s.out();
+    s.batter('b1');
+    s.out();
+    let st = computeMatch(so);
+    expect(st.innings[2]).toMatchObject({ runs: 1, wickets: 2, complete: true, completeReason: 'allout', maxBalls: 2 });
+    expect(st.phase).toBe('break');
+    so.innings.push({ battingTeam: 0, events: [], superOver: true });
+    s.start('a3', 'a4', 'b2');
+    s.runs(2);
+    st = computeMatch(so);
+    expect(st.innings[3].target).toBe(2);
+    expect(st.result).toEqual({ winner: 0, text: 'Match tied · Alpha won the Super Over', superOver: true });
+
+    // Correcting a main-match ball so it was never tied: the main result wins, the super over is ignored.
+    const ev = so.innings[0].events[2] as BallEvent;
+    const fixed = editBall(so, 0, 2, { ...ev, runs: 3, boundary: false });
+    expect(computeMatch(fixed).result).toEqual({ winner: 0, text: 'Alpha won by 1 run' });
+  });
+});
+describe('editing past balls', () => {
+  it('changes one ball without disturbing who faced later balls', () => {
+    const m = makeMatch(['a1', 'a2', 'a3'], ['b1', 'b2']);
+    const s = scorer(m);
+    s.start('a1', 'a2', 'b1');
+    s.runs(1); // a1 -> a2 on strike
+    s.runs(4); // a2
+    s.runs(2); // a2
+    const ev = m.innings[0].events[1] as BallEvent;
+    const edited = editBall(m, 0, 1, { ...ev, runs: 2, boundary: false }); // the 1 was really a 2
+    const st = computeMatch(edited).current!;
+    expect(st.runs).toBe(2 + 4 + 2);
+    const a1 = st.batters.find((b) => b.playerId === 'a1')!;
+    const a2 = st.batters.find((b) => b.playerId === 'a2')!;
+    expect(a1.runs).toBe(2);
+    expect(a2.runs).toBe(6); // later balls still credited to a2 as recorded
+  });
+
+  it('turning a legal ball into a wide gives the over an extra ball', () => {
+    const m = makeMatch(['a1', 'a2'], ['b1', 'b2'], { ballsPerOver: 2 });
+    const s = scorer(m);
+    s.start('a1', 'a2', 'b1');
+    s.runs(0);
+    const ev = m.innings[0].events[1] as BallEvent;
+    const edited = editBall(m, 0, 1, { ...ev, extra: 'wd' });
+    const st = computeMatch(edited).current!;
+    expect(st.legalBalls).toBe(0);
+    expect(st.runs).toBe(1);
+    expect(st.extras.wd).toBe(1);
+  });
+
+  it('deletes a stray ball and refreshes a finished result', () => {
+    const m = makeMatch(['a1', 'a2'], ['b1', 'b2'], { overs: 1, ballsPerOver: 2 });
+    const s = scorer(m);
+    s.start('a1', 'a2', 'b1');
+    s.runs(4);
+    s.runs(2);
+    s.nextInnings();
+    s.start('b1', 'b2', 'a1');
+    s.runs(4);
+    s.runs(4);
+    m.status = 'completed';
+    m.result = computeMatch(m).result!;
+    expect(m.result.text).toBe('Bravo won by 1 wicket (0 balls left)');
+    // The second 4 was really a single: Alpha win by 1 run.
+    const ev = m.innings[1].events[2] as BallEvent;
+    const fixed = editBall(m, 1, 2, { ...ev, runs: 1, boundary: false });
+    expect(fixed.status).toBe('completed');
+    expect(fixed.result?.text).toBe('Alpha won by 1 run');
+    // Deleting the first ball of the chase leaves it undecided: back to live.
+    const reopened = editBall(m, 1, 1, null);
+    expect(reopened.status).toBe('live');
+    expect(reopened.result).toBeUndefined();
   });
 });
