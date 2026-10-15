@@ -88,11 +88,30 @@ Fighter of the Match = the highest-ranked losing-team player in the top 3 who is
 
 Not yet tracked (CricHeroes treats these as scorer-dependent too): runs saved and dropped catches.
 
-## Data & multiple scorers
+## Data, cloud sync & access
 
-Data lives in the browser's IndexedDB on each device. Settings has **Download backup** and **Import / merge backup**.
-Importing merges by id, and the most recently updated copy wins, so you can collect matches scored on different phones into one
-"master" device. Back up regularly.
+**Live site:** deployed on Vercel from the `main` branch of GitHub, so every push redeploys automatically.
+
+**Club database:** Firebase project `ntu-cricket-scorer` (Firestore, asia-southeast1). The connection lives in
+`src/data/firebaseConfig.ts`; set it to `null` to run fully offline with on-device storage only.
+
+- **Offline-first:** each phone keeps a cached copy, so scoring works with no signal and uploads automatically later.
+  The scoring screen shows ☁ Synced / ⏳ Syncing / 📴 Saved on phone.
+- **Who can do what** is enforced server-side by [`firestore.rules`](firestore.rules). After editing that file, paste it into
+  Firebase console → Firestore → Rules → Publish.
+  - Anyone with the link: view live scores, scorecards, players and leaderboards.
+  - Scorers: score matches, add, edit or remove players, import backups.
+  - Admins: everything above, plus club settings and the scorer list (Settings → Scorers & admins).
+- The first person to sign in on a fresh project claims it as admin (Settings → Claim club as admin).
+- Sign-in is Google only. Every domain the site runs on must be listed in Firebase → Authentication → Settings → Authorized domains.
+- Two people scoring the *same* match at once isn't supported; the last save wins. Have one scorer per match.
+
+**Backups** (optional extra safety): Settings → Download backup / Import / merge backup. Imports merge by id and the newest
+`updatedAt` wins, so nothing is deleted. Settings → Upload this phone's data moves anything scored before cloud sync into
+the club database.
+
+**Removing players:** Players → Select → Remove. Players with no matches are deleted. Players with match history are
+archived instead: hidden from the roster and leaderboards, but kept on old scorecards, and restorable from "Removed players".
 
 ## Architecture
 
