@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AppBar, askConfirm, BallChip, Sheet, toast } from '../../components/ui';
-import { BIN_DAYS, binMatch, saveMatch, useClubPar, useMatchWithMeta, usePlayerNames } from '../../db';
+import { BIN_DAYS, binMatch, saveMatch, takeSnapshot, useClubPar, useMatchWithMeta, usePlayerNames } from '../../db';
 import { useAuth } from '../../data/auth';
-import { getDeviceId, lockHeldByOther, timeAgo } from '../../data/lock';
+import { getDeviceId, lockHeldByOther, timeAgo, unsyncedBalls } from '../../data/lock';
 import {
   computeMatch,
   economy,
@@ -70,8 +70,29 @@ export default function Scoring() {
   const deviceId = useMemo(getDeviceId, []);
   const me = auth.user ? { email: auth.user.email, name: auth.user.name, device: deviceId } : null;
 
+  // The last version this device saved while holding the lock (to detect balls lost to a take-over).
+  const myLatestRef = useRef<Match | null>(null);
+
   useEffect(() => {
     if (!stored) return;
+    // Someone took over while we held the lock (e.g. this phone was offline). The database rejects our stale saves,
+    // so nothing of theirs is overwritten — but tell the scorer, and keep any balls that never uploaded.
+    if (lockOn && myLatestRef.current && lockHeldByOther(stored.scorer, deviceId) && meta && !meta.fromCache) {
+      const mine = myLatestRef.current;
+      myLatestRef.current = null;
+      const by = stored.scorer.name;
+      const lost = unsyncedBalls(mine, stored);
+      if (lost > 0) {
+        void takeSnapshot('takeover-lost', mine, { lostBalls: lost, note: `${by} took over scoring` });
+        void askConfirm({
+          title: `${by} took over scoring`,
+          message: `${lost} ball${lost === 1 ? '' : 's'} recorded on this phone hadn't reached the club database when ${by} took over, so ${lost === 1 ? 'it was' : 'they were'} not added to the match. Nothing is lost: they're saved for an admin to review in Settings → Backups & restore. Check with ${by} before re-entering anything.`,
+          confirmLabel: 'OK',
+        });
+      } else {
+        toast(`${by} took over scoring — you're now watching`);
+      }
+    }
     // Until this device holds the pen, always show the latest synced copy (another scorer's balls, or a newer
     // server version than the offline cache). Once we hold it, our own saves echo back and are ignored, so
     // in-flight balls are never replaced by an older copy.
@@ -79,15 +100,16 @@ export default function Scoring() {
       matchRef.current = stored;
       setMatch(stored);
     }
-  }, [stored, lockOn, deviceId]);
+  }, [stored, lockOn, deviceId, meta]);
 
   // Nobody is scoring this live match: claim it — but only from a server-confirmed copy, never a possibly-stale
   // offline cache. (Offline, the first ball recorded takes the lock instead.)
   useEffect(() => {
     if (!lockOn || !me || !stored || !meta || meta.fromCache) return;
-    if (stored.status !== 'live' || stored.deletedAt || stored.scorer) return;
+    if (stored.status !== 'live' || stored.deletedAt || (stored.scorer && !stored.scorer.released)) return;
     const next = { ...stored, scorer: { ...me, at: Date.now() } };
     matchRef.current = next;
+    myLatestRef.current = next;
     setMatch(next);
     void saveMatch(next);
   }, [lockOn, stored, meta, me?.device]);
@@ -119,8 +141,12 @@ export default function Scoring() {
       return;
     }
     let next = fn(current);
-    // Stamp the lock on every save while live; release it when the match finishes or is abandoned.
-    if (lockOn && me) next = { ...next, scorer: next.status === 'live' ? { ...me, at: Date.now() } : undefined };
+    // Stamp the lock on every save; mark it released when the match finishes or is abandoned. (The database only
+    // accepts writes to a live match from the lock holder, so the stamp must stay on the finishing write too.)
+    if (lockOn && me) {
+      next = { ...next, scorer: { ...me, at: Date.now(), ...(next.status === 'live' ? {} : { released: true }) } };
+      myLatestRef.current = next.status === 'live' ? next : null;
+    }
     matchRef.current = next;
     setMatch(next);
     void saveMatch(next);
@@ -133,8 +159,10 @@ export default function Scoring() {
     if (!me) return;
     // Build on the latest synced copy so we don't drop balls the previous scorer already uploaded.
     const base = stored ?? matchRef.current!;
-    const next = { ...base, scorer: { ...me, at: Date.now() } };
+    // takeoverFrom names the lock being taken: the database accepts this one write from a non-holder.
+    const next = { ...base, scorer: { ...me, at: Date.now(), takeoverFrom: base.scorer?.device } };
     matchRef.current = next;
+    myLatestRef.current = next;
     setMatch(next);
     void saveMatch(next);
     toast("You're now scoring this match");
@@ -245,7 +273,10 @@ export default function Scoring() {
               📝 Being scored by {holder.name}
               {auth.user && holder.email === auth.user.email ? ' on another device' : ''}
             </div>
-            <div className="tiny">Last ball saved {timeAgo(holder.at)}. You're watching live.</div>
+            <div className="tiny">
+              Their last update reached the club database {timeAgo(holder.at)}.
+              {meta?.fromCache ? ' (You have no signal, so this may be out of date.)' : ' You are watching live.'}
+            </div>
           </div>
           <button
             className="btn sm"
@@ -728,8 +759,15 @@ function MatchOver({
   const mvp = useMemo(() => computeMvp(match, ctx.state, { clubPar }), [match, ctx.state, clubPar]);
   const [motm, setMotm] = useState<string | undefined>(mvp.heroes.potm);
   const finish = () => {
-    ctx.mutate((m) => ({ ...m, status: 'completed', result: ctx.state.result!, motmId: motm }));
-    toast('Match saved 🏆');
+    const finished: Match = { ...match, status: 'completed', result: ctx.state.result!, motmId: motm };
+    ctx.mutate(() => finished);
+    void takeSnapshot('finish', finished);
+    // Tells the match page to show the upload status (survives the scoring screen's own redirect).
+    try {
+      sessionStorage.setItem(`just-finished:${match.id}`, '1');
+    } catch {
+      // private mode: the status banner still appears while anything is pending
+    }
     nav(`/match/${match.id}`, { replace: true });
   };
   const heroes = { ...mvp.heroes, potm: motm, fighter: mvp.heroes.fighter === motm ? undefined : mvp.heroes.fighter };

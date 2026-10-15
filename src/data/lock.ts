@@ -1,4 +1,4 @@
-import type { ScorerLock } from '../types';
+import type { Match, ScorerLock } from '../types';
 
 const KEY = 'ntu-cricket-device-id';
 let sessionFallback: string | null = null;
@@ -18,8 +18,36 @@ export function getDeviceId(): string {
   }
 }
 
+/** A live lock held by a different device (a released lock doesn't count). */
 export function lockHeldByOther(lock: ScorerLock | undefined, deviceId: string): lock is ScorerLock {
-  return !!lock && lock.device !== deviceId;
+  return !!lock && !lock.released && lock.device !== deviceId;
+}
+
+/** JSON with sorted keys and no undefined values: the database may return fields in a different order. */
+function stable(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
+  if (v && typeof v === 'object') {
+    const entries = Object.entries(v as Record<string, unknown>)
+      .filter(([, x]) => x !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, x]) => `${JSON.stringify(k)}:${stable(x)}`).join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
+/**
+ * Balls this device recorded that the club's copy doesn't have: compares each innings' events up to the first
+ * difference and counts the balls after it. Used when another scorer took over while this phone was offline.
+ */
+export function unsyncedBalls(mine: Match, theirs: Match): number {
+  let lost = 0;
+  mine.innings.forEach((inn, i) => {
+    const other = theirs.innings[i]?.events ?? [];
+    let k = 0;
+    while (k < inn.events.length && k < other.length && stable(inn.events[k]) === stable(other[k])) k++;
+    lost += inn.events.slice(k).filter((e) => e.kind === 'ball').length;
+  });
+  return lost;
 }
 
 export function timeAgo(ms: number): string {

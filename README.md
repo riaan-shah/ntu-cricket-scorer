@@ -39,7 +39,10 @@ Screen** so it works offline at the cage.
    - Strike rotates automatically on odd runs and at the end of each over. Consecutive overs and bowler quotas are blocked,
      with an "Allow anyway" override.
 6. **Innings break**: shows the target and lets you **＋ Add overs** (any number) if you agree to extend.
-7. **Tie → super over**: if scores are level you can play a super over (one over, two wickets; the side that batted\n   second bats first, as in ICC playing conditions) or finish as a tie. A tied super over can be followed by another.\n   Super-over runs and wickets count for MVP but not career records.\n8. **Match over**: the result is worked out automatically ("won by N runs" or "won by N wickets (B balls left)"). The Heroes
+7. **Tie → super over**: if scores are level you can play a super over (one over, two wickets; the side that batted
+   second bats first, as in ICC playing conditions) or finish as a tie. A tied super over can be followed by another.
+   Super-over runs and wickets count for MVP but not career records.
+8. **Match over**: the result is worked out automatically ("won by N runs" or "won by N wickets (B balls left)"). The Heroes
    of the Match (Player of the Match, Best Batter, Best Bowler, Fighter) are picked by MVP 2.0 (see below), and you can
    change Player of the Match. Then **Finish & save**.
 9. **Match page**: Summary, Scorecard, ball-by-ball Commentary, Overs and partnerships.
@@ -47,7 +50,11 @@ Screen** so it works offline at the cage.
    bar, Man of the Match with his stats; on phones this opens the share sheet for WhatsApp/Instagram),
    **Scorecard image** (the full scorecard as a PNG), **PDF / Print**, **Copy summary** (text). The footer line on the
    summary graphic is set in Settings.
-   **Fix any past ball**: tap a ball in Commentary (or in Recent overs while scoring) to change runs, extras,\n   boundary, who faced or bowled it, or dismissal details, or to delete a stray ball. Later balls keep who was on strike,\n   and a finished match's result updates automatically (it reopens if it's no longer decided). Adding or removing a\n   wicket still needs an undo back to that ball, because it changes who batted next.\n   **Captains**: pick one per team when setting up (or in Match settings); they show as (c) on scorecards and images.
+   **Fix any past ball**: tap a ball in Commentary (or in Recent overs while scoring) to change runs, extras,
+   boundary, who faced or bowled it, or dismissal details, or to delete a stray ball. Later balls keep who was on strike,
+   and a finished match's result updates automatically (it reopens if it's no longer decided). Adding or removing a
+   wicket still needs an undo back to that ball, because it changes who batted next.
+   **Captains**: pick one per team when setting up (or in Match settings); they show as (c) on scorecards and images.
 
 ## Club rules: how they're handled
 
@@ -115,7 +122,8 @@ publishes the factors and scales but not the formulas, so the maths in `src/engi
 
 **Heroes of the Match** (CricHeroes rules): Player of the Match = the highest-ranked winning-team player in the top 3 MVPs
 (otherwise the MVP leader), and the scorer can override it. Best Batter / Best Bowler = highest batting / bowling impact.
-Fighter of the Match = the highest-ranked losing-team player in the top 3 who isn't Player of the Match and made a\npositive contribution.
+Fighter of the Match = the highest-ranked losing-team player in the top 3 who isn't Player of the Match and made a
+positive contribution.
 
 Not yet tracked (CricHeroes treats these as scorer-dependent too): runs saved and dropped catches.
 
@@ -135,18 +143,43 @@ Not yet tracked (CricHeroes treats these as scorer-dependent too): runs saved an
   - Admins: everything above, plus club settings and the scorer list (Settings → Scorers & admins).
 - The first person to sign in on a fresh project claims it as admin (Settings → Claim club as admin).
 - Sign-in is Google only. Every domain the site runs on must be listed in Firebase → Authentication → Settings → Authorized domains.
-- **Scorer lock**: one device holds the pen for a live match. Anyone else opening it sees *Being scored by Riaan*\n  and watches live, with a **Take over** button (confirm first; balls the other phone hasn't uploaded yet could be lost).\n  The lock is per device, so the same person on two phones is protected too.
+- **Scorer lock**: one device holds the pen for a live match. Anyone else opening it sees *Being scored by Riaan* (and
+  when their last update reached the club database) and watches live, with a **Take over** button. The lock is per
+  device, so the same person on two phones is protected too, and the database itself rejects stale saves from a phone that
+  lost the lock (see Backup & sync).
 
 **Share live link**: the 📡 button (scoring screen, match page) opens the share menu with `…/m/<match-id>`. A Vercel
 function (`api/live.ts`) gives WhatsApp and other apps a preview showing the current score, then redirects into the app.
 Previews refresh at most every 30 seconds, and apps like WhatsApp also keep their own copy of a preview.
 
-**Backups** (optional extra safety): Settings → Download backup / Import / merge backup. Imports merge by id and the newest
-`updatedAt` wins, so nothing is deleted. Settings → Upload this phone's data moves anything scored before cloud sync into
-the club database.
+**Backup & sync** — three layers, all automatic after a one-time setup:
+1. **Club database with offline sync.** Every ball is saved on the phone instantly and uploads when there's signal.
+   *Finish & save* shows *Uploading…* → *✓ Saved to the club database* (or *Saved on this phone only* while offline),
+   and the scorer's home screen warns while anything hasn't uploaded yet.
+   **Take-over safety:** the database rules only accept writes to a live match from the device holding the scoring lock
+   (or an explicit take-over, or an admin), so an offline phone can never overwrite the new scorer's balls when it
+   reconnects. That phone is told how many of its balls didn't upload, and they're kept in a snapshot for an admin.
+2. **Automatic snapshots** (in-app, admins only): every finish, bin, reopen, post-finish edit, player merge/removal and
+   take-over loss saves an immutable copy of that match + all players + club settings + the scorer/admin list. Nobody
+   can edit or delete them (the weekly job prunes ones older than a year).
+3. **Weekly off-site backup** (every Saturday 11pm Singapore): a GitHub Action in a private repo
+   ([`offsite-backup/`](offsite-backup)) exports everything to `latest/backup.json` with full history, *then* empties
+   30-day-old bin items, and reports to `config/backupStatus`. Admins see *Last off-site backup: Sat ✓* in Settings and a
+   warning if it failed or is over 8 days old. The service-account key lives only as a GitHub secret.
 
-**Bin:** deleting a match moves it to **Matches → Bin** for 30 days (it stops counting towards stats). Scorers can\nrestore it; admins can delete forever. Anything older than 30 days is removed automatically.\n\n**Removing players:** Players → Select → Remove. Players with no matches are deleted. Players with match history are
-archived instead: hidden from the roster and leaderboards, but kept on old scorecards, and restorable from "Removed players".
+**Settings → Backups & restore** (admins): off-site status, download a full backup, load a backup file, browse
+snapshots. **Merge** brings back anything missing or newer and deletes nothing; **Restore exactly** rolls the club back
+to the file (for a full backup that includes deleting newer players/matches, and replacing settings and the scorer
+list — the restoring admin always stays admin). A safety copy downloads before any exact restore. Settings warns while
+the club has only one admin.
+
+**Bin:** deleting a match moves it to **Matches → Bin** for 30 days (it stops counting towards stats). Scorers can
+restore it; admins can delete forever. Items older than 30 days are emptied by the weekly backup job (after that week's
+backup) and by the app.
+
+**Removing players:** Players → Select → Remove. Players who never played go to the bin for 30 days. Players with match
+history are archived instead: hidden from the roster and leaderboards, but kept on old scorecards. Both are restorable from
+"Removed players".
 
 ## Architecture
 

@@ -9,8 +9,9 @@ import {
   deleteMatchForever,
   restoreMatch,
   saveMatch,
+  takeSnapshot,
   useClubPar,
-  useMatch,
+  useMatchWithMeta,
   usePlayerNames,
   useSettings,
 } from '../db';
@@ -25,6 +26,7 @@ import { HeroesCard, MvpTable } from '../components/Mvp';
 import { PressureChart } from '../components/PressureChart';
 import { BallEditSheet } from '../components/BallEditor';
 import { getDeviceId } from '../data/lock';
+import { useOnline } from '../data/online';
 import { SummaryCard } from '../components/SummaryCard';
 import { downloadText, exportNodeAsImage, matchFileName, shareMatchLink, textSummary } from '../export';
 
@@ -33,7 +35,22 @@ type Tab = 'summary' | 'scorecard' | 'commentary' | 'overs' | 'analysis';
 export default function MatchView() {
   const { id } = useParams();
   const nav = useNavigate();
-  const match = useMatch(id);
+  const { match, meta } = useMatchWithMeta(id);
+  // Set by Finish & save on the scoring screen; read once.
+  const [justFinished] = useState(() => {
+    try {
+      return sessionStorage.getItem(`just-finished:${id}`) === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(`just-finished:${id}`);
+    } catch {
+      // ignore
+    }
+  }, [id]);
   const { nameOf } = usePlayerNames();
   const settings = useSettings();
   const { canScore, isAdmin } = useAuth();
@@ -99,6 +116,7 @@ export default function MatchView() {
       confirmLabel: 'Reopen',
     });
     if (!ok) return;
+    void takeSnapshot('reopen', match);
     await saveMatch({ ...match, status: 'live', result: undefined });
     nav(`/match/${match.id}/score`);
   };
@@ -135,6 +153,7 @@ export default function MatchView() {
       </div>
 
       <div className="page">
+        {canScore && <UploadStatus pending={!!meta?.pendingWrites} justFinished={justFinished} cloud={!!meta} />}
         {match.deletedAt && (
           <div className="card card-pad stack" style={{ borderColor: 'var(--accent)' }}>
             <div className="bold">🗑 This match is in the bin</div>
@@ -519,6 +538,8 @@ export default function MatchView() {
           nameOf={nameOf}
           onClose={() => setEditing(null)}
           onSave={async (next) => {
+            // Edits to a finished match keep a copy of how it was before.
+            if (match.status === 'completed') void takeSnapshot('edit', match);
             await saveMatch(next);
             if (match.status === 'completed' && next.status === 'live') toast('Ball updated — the match is no longer decided, so it was reopened');
             else if (match.result?.text !== next.result?.text && next.result) toast(`Ball updated — result is now: ${next.result.text}`);
@@ -594,4 +615,30 @@ function WinBanner({ match, chasing, pct, flat }: { match: Match; chasing: TeamI
       </div>
     </div>
   );
+}
+/**
+ * After Finish & save (and whenever this phone has unconfirmed changes to the match): is it in the club database yet?
+ * Driven by the database's own confirmation, not a guess.
+ */
+function UploadStatus({ pending, justFinished, cloud }: { pending: boolean; justFinished: boolean; cloud: boolean }) {
+  const online = useOnline();
+  const [showDone, setShowDone] = useState(justFinished);
+  useEffect(() => {
+    if (justFinished && !pending) {
+      const t = setTimeout(() => setShowDone(false), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [justFinished, pending]);
+  if (!cloud) return justFinished && showDone ? <div className="upload-ok">✓ Match saved on this device</div> : null;
+  if (pending) {
+    return online ? (
+      <div className="upload-wait">⬆ Uploading to the club database…</div>
+    ) : (
+      <div className="upload-off">
+        <b>📴 Saved on this phone only.</b> It uploads automatically as soon as you have signal — just open the app.
+        Don't clear browser data or uninstall until it says it's saved.
+      </div>
+    );
+  }
+  return justFinished && showDone ? <div className="upload-ok">✓ Saved to the club database</div> : null;
 }

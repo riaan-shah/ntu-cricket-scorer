@@ -1,0 +1,30 @@
+name: Weekly off-site backup
+
+on:
+  schedule:
+    # Every Saturday 15:00 UTC = 11pm Singapore time.
+    - cron: '0 15 * * 6'
+  # Lets an admin run it by hand: Actions → Weekly off-site backup → Run workflow.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Back up the club database
+        run: node backup.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

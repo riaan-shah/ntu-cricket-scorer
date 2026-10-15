@@ -6,14 +6,17 @@ import {
   getDoc,
   getDocs,
   initializeFirestore,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   persistentLocalCache,
   persistentMultipleTabManager,
   setDoc,
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
-import type { ClubSettings, Match, Player } from '../types';
+import type { Access, BackupStatus, ClubSettings, Match, Player, Snapshot } from '../types';
 import type { Backend } from './backend';
 import { firebaseConfig } from './firebaseConfig';
 
@@ -105,12 +108,13 @@ export const cloudBackend: Backend = {
     const snap = await getDoc(doc(firestore(), 'config', 'club'));
     return snap.exists() ? (snap.data() as ClubSettings) : undefined;
   },
-  bulkPut: async (players, matches, deletePlayerIds = []) => {
+  bulkPut: async (players, matches, deletePlayerIds = [], deleteMatchIds = []) => {
     // Firestore batches are limited to 500 writes.
     const ops: ((b: ReturnType<typeof writeBatch>) => void)[] = [
       ...players.map((p) => (b: ReturnType<typeof writeBatch>) => b.set(doc(firestore(), 'players', p.id), p)),
       ...matches.map((m) => (b: ReturnType<typeof writeBatch>) => b.set(doc(firestore(), 'matches', m.id), m)),
       ...deletePlayerIds.map((id) => (b: ReturnType<typeof writeBatch>) => b.delete(doc(firestore(), 'players', id))),
+      ...deleteMatchIds.map((id) => (b: ReturnType<typeof writeBatch>) => b.delete(doc(firestore(), 'matches', id))),
     ];
     for (let i = 0; i < ops.length; i += 400) {
       const batch = writeBatch(firestore());
@@ -118,4 +122,49 @@ export const cloudBackend: Backend = {
       await batch.commit();
     }
   },
+
+  subscribePending: (cb) => {
+    // A collection snapshot's hasPendingWrites is true while any of its docs has unconfirmed local changes.
+    let m = false;
+    let p = false;
+    const emit = () => cb(m || p);
+    const u1 = onSnapshot(collection(firestore(), 'matches'), { includeMetadataChanges: true }, (s) => {
+      m = s.metadata.hasPendingWrites;
+      emit();
+    });
+    const u2 = onSnapshot(collection(firestore(), 'players'), { includeMetadataChanges: true }, (s) => {
+      p = s.metadata.hasPendingWrites;
+      emit();
+    });
+    return () => {
+      u1();
+      u2();
+    };
+  },
+  subscribeBackupStatus: (cb) =>
+    onSnapshot(
+      doc(firestore(), 'config', 'backupStatus'),
+      (snap) => cb(snap.exists() ? (snap.data() as BackupStatus) : undefined),
+      () => cb(undefined),
+    ),
+  getAccess: async () => {
+    try {
+      const snap = await getDoc(doc(firestore(), 'config', 'access'));
+      return snap.exists() ? (snap.data() as Access) : undefined;
+    } catch {
+      return undefined;
+    }
+  },
+  putAccess: async (a) => {
+    await setDoc(doc(firestore(), 'config', 'access'), a);
+  },
+  // Snapshots are a safety net: a failure (e.g. rules not yet published) is logged, never shown as a scoring error.
+  addSnapshot: (s) => {
+    setDoc(doc(firestore(), 'snapshots', s.id), s).catch((e) => console.warn('Snapshot not saved', e));
+    return Promise.resolve();
+  },
+  listSnapshots: async (n) =>
+    (await getDocs(query(collection(firestore(), 'snapshots'), orderBy('createdAt', 'desc'), limit(n)))).docs.map(
+      (d) => d.data() as Snapshot,
+    ),
 };

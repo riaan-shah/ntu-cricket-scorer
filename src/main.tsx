@@ -21,7 +21,7 @@ onCloudWriteError((e) => {
   const code = (e as { code?: string }).code;
   toast(
     code === 'permission-denied'
-      ? "Not saved to the club database — you're not on the scorer list"
+      ? "Not saved to the club database: you're not on the scorer list, or another scorer has taken over this match"
       : `Sync error: ${(e as Error).message}`,
   );
 });

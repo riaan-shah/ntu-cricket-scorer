@@ -1740,3 +1740,24 @@ select.input {
 :root[data-sun] .appbar {
   background: #000;
 }
+.upload-ok,
+.upload-wait,
+.upload-off {
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.upload-ok {
+  background: color-mix(in srgb, var(--good) 18%, var(--card));
+  border: 1px solid var(--good);
+}
+.upload-wait {
+  background: var(--chip);
+  border: 1px solid var(--line);
+}
+.upload-off {
+  background: color-mix(in srgb, var(--gold) 22%, var(--card));
+  border: 1px solid var(--gold);
+  font-weight: 500;
+}

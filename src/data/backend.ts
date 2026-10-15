@@ -1,4 +1,4 @@
-import type { ClubSettings, ID, Match, Player } from '../types';
+import type { Access, BackupStatus, ClubSettings, ID, Match, Player, Snapshot } from '../types';
 
 export type Unsubscribe = () => void;
 
@@ -27,6 +27,15 @@ export interface Backend {
   getAllPlayers(): Promise<Player[]>;
   getAllMatches(): Promise<Match[]>;
   getSettings(): Promise<ClubSettings | undefined>;
-  /** Atomically-ish write many docs (used by import and player merge). */
-  bulkPut(players: Player[], matches: Match[], deletePlayerIds?: ID[]): Promise<void>;
+  /** Write/delete many docs in batches (import, restore, player merge). */
+  bulkPut(players: Player[], matches: Match[], deletePlayerIds?: ID[], deleteMatchIds?: ID[]): Promise<void>;
+
+  /** True while this device has changes the club database hasn't confirmed yet (cloud only). */
+  subscribePending(cb: (pending: boolean) => void): Unsubscribe;
+  subscribeBackupStatus(cb: (s: BackupStatus | undefined) => void): Unsubscribe;
+  /** Scorer/admin list; undefined if this user can't read it. */
+  getAccess(): Promise<Access | undefined>;
+  putAccess(a: Access): Promise<void>;
+  addSnapshot(s: Snapshot): Promise<void>;
+  listSnapshots(limit: number): Promise<Snapshot[]>;
 }

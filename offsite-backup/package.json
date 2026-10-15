@@ -1,0 +1,9 @@
+{
+  "name": "ntu-cricket-backups",
+  "private": true,
+  "type": "module",
+  "description": "Weekly off-site backup of the NTU Cricket Scorer club database",
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  }
+}

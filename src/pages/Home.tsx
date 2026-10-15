@@ -4,12 +4,16 @@ import { MatchCard } from '../components/MatchCard';
 import { AccountButton } from '../components/Account';
 import { Avatar } from '../components/ui';
 import { useAuth } from '../data/auth';
-import { useMatches, usePlayerNames, useSettings } from '../db';
+import { useMatches, usePendingUploads, usePlayerNames, useSettings } from '../db';
+import { useOnline } from '../data/online';
+import { AdminHealthBanner } from '../components/AdminHealth';
 import { computeCareerStats } from '../engine/stats';
 
 export default function Home() {
   const settings = useSettings();
   const auth = useAuth();
+  const pending = usePendingUploads();
+  const online = useOnline();
   const matches = useMatches() ?? [];
   const { nameOf, players, map } = usePlayerNames();
   const live = matches.filter((m) => m.status === 'live');
@@ -42,6 +46,13 @@ export default function Home() {
         </div>
       </div>
       <div className="page">
+        {auth.mode === 'cloud' && auth.canScore && pending && (
+          <div className="upload-off">
+            ⏳ <b>Not uploaded yet.</b> Some scoring on this phone hasn't reached the club database.{' '}
+            {online ? 'Uploading now…' : 'Open the app when you have signal and it uploads automatically.'}
+          </div>
+        )}
+        <AdminHealthBanner />
         {auth.canScore && (
           <Link to="/match/new" className="btn primary big block">
             ＋ Start a new match

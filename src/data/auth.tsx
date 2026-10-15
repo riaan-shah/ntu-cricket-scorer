@@ -8,15 +8,14 @@ import {
 } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { Access } from '../types';
+import { setActor } from '../db';
 import { cloudEnabled, firebaseApp, firestore } from './cloud';
 
 export type Role = 'viewer' | 'scorer' | 'admin';
 
 /** Stored at config/access — only readable by scorers, so the scorer list isn't public. */
-export interface Access {
-  admins: string[];
-  scorers: string[];
-}
+export type { Access };
 
 export interface AuthState {
   mode: 'local' | 'cloud';
@@ -82,6 +81,11 @@ function CloudAuthProvider({ children }: { children: ReactNode }) {
       }),
     [auth],
   );
+
+  // Label automatic snapshots with who made the change.
+  useEffect(() => {
+    setActor(user?.email);
+  }, [user]);
 
   useEffect(() => {
     setAccess(null);

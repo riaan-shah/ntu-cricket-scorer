@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAdminHealth } from '../components/AdminHealth';
 import { RulesEditor } from '../components/RulesEditor';
 import { AppBar, Seg, ToggleRow, toast } from '../components/ui';
 import { useSunMode } from '../sunMode';
@@ -32,7 +34,8 @@ export default function Settings() {
     try {
       const data = JSON.parse(await file.text());
       toast('Importing…');
-      const res = await importBackup(data);
+      // Settings and the scorer list are admin-only; scorers just merge players and matches.
+      const res = await importBackup(auth.isAdmin ? data : { ...data, settings: undefined, access: undefined });
       toast(`Imported ${res.players} player(s) and ${res.matches} match(es)`);
     } catch (e) {
       toast(`Import failed: ${(e as Error).message}`);
@@ -45,6 +48,7 @@ export default function Settings() {
       <div className="page">
         {cloud && <AccountCard />}
         {cloud && auth.isAdmin && auth.access && <AccessCard access={auth.access} />}
+        {auth.isAdmin && <BackupsCard />}
 
         <div className="card card-pad stack">
           {cloud && !auth.isAdmin && <div className="small muted">Only club admins can change these settings.</div>}
@@ -260,6 +264,11 @@ function AccessCard({ access }: { access: Access }) {
         <h2>Scorers & admins</h2>
         <span className="tiny muted">private — only scorers see this list</span>
       </div>
+      {access.admins.length < 2 && (
+        <div className="upload-off" style={{ margin: '10px 14px 0' }}>
+          ⚠️ <b>Only one admin.</b> Add a second admin below so the club can never be locked out if one account is lost.
+        </div>
+      )}
       {rows.map(({ e, r }) => (
         <div key={e} className="list-item" style={{ cursor: 'default' }}>
           <div style={{ flex: 1, minWidth: 0 }} className="small">
@@ -335,5 +344,26 @@ function UploadLocalData() {
         {busy ? 'Uploading…' : '☁ Upload this phone’s data'}
       </button>
     </div>
+  );
+}
+
+function BackupsCard() {
+  const { issues, statusLine } = useAdminHealth();
+  const warns = issues.filter((i) => i.level === 'warn' && !i.text.startsWith('Only one admin'));
+  return (
+    <Link to="/backups" className="card" style={{ display: 'block' }}>
+      <div className="card-head">
+        <h2>🛟 Backups & restore</h2>
+        <span className="link-btn">Open →</span>
+      </div>
+      <div className="card-pad stack" style={{ gap: 6 }}>
+        <div className="small">{statusLine ?? 'Automatic snapshots on. Weekly off-site backup not set up yet.'}</div>
+        {warns.map((w) => (
+          <div key={w.text} className="upload-off small">
+            ⚠️ {w.text}
+          </div>
+        ))}
+      </div>
+    </Link>
   );
 }

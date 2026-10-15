@@ -12,6 +12,8 @@ export interface Player {
   bowlingStyle?: string;
   /** Removed from the roster but kept so old scorecards still show the name. */
   archived?: boolean;
+  /** In the bin (removed with no match history): restorable for 30 days. */
+  deletedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -156,6 +158,10 @@ export interface ScorerLock {
   device: string;
   /** Last time the holder saved (ms). */
   at: number;
+  /** Lock released (match finished/abandoned/binned): anyone may score again. */
+  released?: boolean;
+  /** Set only on the take-over write: the device the lock is being taken from. */
+  takeoverFrom?: string;
 }
 
 export type MatchStatus = 'live' | 'completed' | 'abandoned';
@@ -191,4 +197,47 @@ export interface ClubSettings {
   /** Footer line on the shareable match-summary image. */
   exportTagline: string;
   defaultRules: MatchRules;
+}
+
+/** Private scorer/admin list (config/access). */
+export interface Access {
+  admins: string[];
+  scorers: string[];
+}
+
+export type SnapshotReason =
+  | 'finish'
+  | 'bin'
+  | 'reopen'
+  | 'edit'
+  | 'merge-players'
+  | 'remove-players'
+  | 'takeover-lost'
+  | 'before-restore';
+
+/** Immutable automatic backup (admins only): one match plus the whole club roster, settings and access list. */
+export interface Snapshot {
+  id: ID;
+  createdAt: number;
+  reason: SnapshotReason;
+  by?: string;
+  matchId?: ID;
+  /** "Cage Kings v Net Ninjas · 2026-10-15" */
+  label: string;
+  match?: Match;
+  players: Player[];
+  settings?: ClubSettings;
+  access?: Access;
+  /** take-over-lost: how many balls this phone had that never reached the club database. */
+  lostBalls?: number;
+  note?: string;
+}
+
+/** Written by the weekly off-site backup job (config/backupStatus). */
+export interface BackupStatus {
+  lastRunAt: number;
+  ok: boolean;
+  message?: string;
+  counts?: { players: number; matches: number; binned: number; purged: number };
+  commit?: string;
 }

@@ -3,7 +3,10 @@ rules_version = '2';
 // NTU Cricket Scorer — paste into Firebase console → Firestore Database → Rules → Publish.
 //  - Anyone can read players, matches and club settings (public live scores).
 //  - Only emails on the private access list (config/access) can write.
-//  - The very first signed-in user can claim the club as admin while no access list exists.
+//  - A live match being scored is locked to one device: other devices can't overwrite it unless they explicitly
+//    take over (or are an admin). This stops an offline phone from overwriting a new scorer's balls when it reconnects.
+//  - Snapshots (automatic backups) can be created by scorers, read by admins, and never changed or deleted.
+//  - The first signed-in user can claim the club as admin while no access list exists.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
@@ -23,6 +26,20 @@ service cloud.firestore {
         (email() in get(accessPath()).data.scorers || email() in get(accessPath()).data.admins);
     }
 
+    // Is this live match currently locked to a scoring device?
+    function lockActive(m) {
+      return m.status == 'live' && ('scorer' in m) && m.scorer != null && !m.scorer.get('released', false);
+    }
+    // Write allowed by the scoring lock: same device, an explicit take-over of the current holder, or an admin.
+    function lockAllows() {
+      let cur = resource.data;
+      let nxt = request.resource.data;
+      return !lockActive(cur)
+        || (('scorer' in nxt) && nxt.scorer != null && nxt.scorer.device == cur.scorer.device)
+        || (('scorer' in nxt) && nxt.scorer != null && nxt.scorer.get('takeoverFrom', '') == cur.scorer.device)
+        || isAdmin();
+    }
+
     match /players/{id} {
       allow read: if true;
       allow create, update, delete: if isScorer();
@@ -30,12 +47,27 @@ service cloud.firestore {
 
     match /matches/{id} {
       allow read: if true;
-      allow create, update, delete: if isScorer();
+      allow create: if isScorer();
+      allow update: if isScorer() && lockAllows();
+      allow delete: if isScorer();
+    }
+
+    match /snapshots/{id} {
+      // Contains the scorer/admin email list, so only admins can read.
+      allow read: if isAdmin();
+      allow create: if isScorer();
+      allow update, delete: if false;
     }
 
     match /config/club {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    match /config/backupStatus {
+      // Written only by the weekly backup job (service account bypasses these rules).
+      allow read: if isScorer();
+      allow write: if false;
     }
 
     match /config/access {

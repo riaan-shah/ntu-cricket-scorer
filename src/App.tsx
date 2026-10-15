@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ConfirmHost, ToastHost } from './components/ui';
 import Home from './pages/Home';
+import Backups from './pages/Backups';
 import Compare from './pages/Compare';
 import Leaderboard from './pages/Leaderboard';
 import Matches from './pages/Matches';
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/records" element={<Records />} />
           <Route path="/compare" element={<Compare />} />
+          <Route path="/backups" element={<Backups />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Home />} />
         </Routes>

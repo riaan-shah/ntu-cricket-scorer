@@ -1,7 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppBar, Avatar, Sheet, toast } from '../components/ui';
-import { createPlayer, playersWithHistory, removePlayers, restorePlayer, useMatches, usePlayers } from '../db';
+import {
+  BIN_DAYS,
+  binDaysLeft,
+  createPlayer,
+  playersWithHistory,
+  purgeExpiredPlayers,
+  removePlayers,
+  restorePlayer,
+  useMatches,
+  usePlayers,
+} from '../db';
 import { useAuth } from '../data/auth';
 import { batAverage, batStrikeRate, bowlEconomy, computeCareerStats } from '../engine/stats';
 import { downloadText, toCsv } from '../export';
@@ -36,6 +46,11 @@ export default function Players() {
     setSelected(new Set());
   };
   const allVisibleSelected = list.length > 0 && list.every((p) => selected.has(p.id));
+
+  // Players binned more than 30 days ago (and who never played) are removed for good.
+  useEffect(() => {
+    if (canScore && players.some((p) => p.deletedAt && binDaysLeft(p) === 0)) void purgeExpiredPlayers(players);
+  }, [canScore, players]);
 
   const exportCsv = () => {
     const rows: (string | number)[][] = [
@@ -166,8 +181,11 @@ export default function Players() {
               removed.map((p) => (
                 <div key={p.id} className="list-item" style={{ cursor: 'default' }}>
                   <Avatar name={p.name} />
-                  <Link to={`/players/${p.id}`} style={{ flex: 1 }} className="bold">
-                    {p.name}
+                  <Link to={`/players/${p.id}`} style={{ flex: 1, minWidth: 0 }}>
+                    <div className="bold">{p.name}</div>
+                    <div className="tiny muted">
+                      {p.deletedAt ? `In the bin · deleted for good in ${binDaysLeft(p)} days` : 'Kept for old scorecards'}
+                    </div>
                   </Link>
                   <button
                     className="btn sm"
@@ -242,10 +260,13 @@ export function RemoveConfirm({
       {deleted.length > 0 && (
         <div className="card card-pad stack">
           <div className="bold" style={{ color: 'var(--accent)' }}>
-            🗑 Deleted permanently ({deleted.length})
+            🗑 Moved to the bin ({deleted.length})
           </div>
           <div className="small">{names(deleted)}</div>
-          <div className="tiny muted">They haven't played any matches, so nothing else is affected. This can't be undone.</div>
+          <div className="tiny muted">
+            They haven't played any matches. Restore them from “Removed players” within {BIN_DAYS} days; after that
+            they're deleted for good.
+          </div>
         </div>
       )}
       {archived.length > 0 && (
@@ -270,7 +291,7 @@ export function RemoveConfirm({
             try {
               const res = await removePlayers(players.map((p) => p.id));
               toast(
-                [res.deleted && `${res.deleted} deleted`, res.archived && `${res.archived} removed from roster`]
+                [res.binned && `${res.binned} moved to the bin`, res.archived && `${res.archived} removed from roster`]
                   .filter(Boolean)
                   .join(' · '),
               );

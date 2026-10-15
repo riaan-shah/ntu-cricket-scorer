@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Backend, MatchMeta } from './data/backend';
 import { cloudBackend, cloudEnabled } from './data/cloud';
 import { localBackend } from './data/local';
+import { planRestore, type RestoreMode } from './data/restore';
 import { DEFAULT_RULES } from './engine/engine';
 import { clubPar } from './engine/impact';
-import type { ClubSettings, ID, Match, Player } from './types';
+import type { Access, BackupStatus, ClubSettings, ID, Match, Player, Snapshot, SnapshotReason } from './types';
 
 /** Cloud (shared club database) when Firebase is configured, otherwise this device only. */
 export const backend: Backend = cloudEnabled ? cloudBackend : localBackend;
@@ -45,23 +46,32 @@ export function playersWithHistory(matches: Match[]): Set<ID> {
 }
 
 /**
- * Removes players from the club. Players who never played are deleted; players with match history are archived
- * (hidden from the roster and leaderboards) so old scorecards keep their names.
+ * Removes players from the club. Players with match history are archived (hidden from the roster and leaderboards,
+ * kept so old scorecards show their name). Players who never played go to the bin for 30 days.
  */
 export async function removePlayers(ids: ID[]) {
   const [players, matches] = await Promise.all([backend.getAllPlayers(), backend.getAllMatches()]);
+  void takeSnapshot('remove-players', undefined, { players });
   const history = playersWithHistory(matches);
   const now = Date.now();
-  const archive = players
-    .filter((p) => ids.includes(p.id) && history.has(p.id))
-    .map((p) => ({ ...p, archived: true, updatedAt: now }));
-  const remove = ids.filter((id) => !history.has(id));
-  await backend.bulkPut(archive, [], remove);
-  return { archived: archive.length, deleted: remove.length };
+  const chosen = players.filter((p) => ids.includes(p.id));
+  const archive = chosen.filter((p) => history.has(p.id)).map((p) => ({ ...p, archived: true, updatedAt: now }));
+  const binned = chosen
+    .filter((p) => !history.has(p.id))
+    .map((p) => ({ ...p, archived: true, deletedAt: now, updatedAt: now }));
+  await backend.bulkPut([...archive, ...binned], []);
+  return { archived: archive.length, binned: binned.length };
 }
 
 export async function restorePlayer(p: Player) {
-  await backend.putPlayer({ ...p, archived: false, updatedAt: Date.now() });
+  await backend.putPlayer({ ...p, archived: false, deletedAt: undefined, updatedAt: Date.now() });
+}
+
+/** Permanently removes binned players (never played, including in binned matches) after 30 days. */
+export async function purgeExpiredPlayers(players: Player[]) {
+  const history = playersWithHistory(await backend.getAllMatches());
+  const expired = players.filter((p) => p.deletedAt && daysLeft(p.deletedAt) === 0 && !history.has(p.id));
+  if (expired.length) await backend.bulkPut([], [], expired.map((p) => p.id));
 }
 
 /** Rewrites every reference to `fromId` in a match as `intoId`. */
@@ -111,6 +121,7 @@ function remapPlayer(m: Match, fromId: ID, intoId: ID): Match {
 /** Moves all of `fromId`'s matches and stats to `intoId`, then removes `fromId`. */
 export async function mergePlayers(fromId: ID, intoId: ID) {
   const matches = await backend.getAllMatches();
+  void takeSnapshot('merge-players');
   const changed = matches.filter((m) => JSON.stringify(m).includes(fromId)).map((m) => remapPlayer(m, fromId, intoId));
   await backend.bulkPut([], changed, [fromId]);
 }
@@ -126,7 +137,14 @@ export const BIN_DAYS = 30;
 
 /** "Delete": moves the match to the bin, where it can be restored for 30 days. */
 export async function binMatch(m: Match) {
-  await backend.putMatch({ ...m, deletedAt: Date.now(), scorer: undefined, updatedAt: Date.now() });
+  void takeSnapshot('bin', m);
+  // Keep the scorer stamp (released): the database only lets the lock holder or an admin write a live match.
+  await backend.putMatch({
+    ...m,
+    deletedAt: Date.now(),
+    scorer: m.scorer ? { ...m.scorer, released: true } : undefined,
+    updatedAt: Date.now(),
+  });
 }
 
 export async function restoreMatch(m: Match) {
@@ -137,8 +155,12 @@ export async function deleteMatchForever(id: ID) {
   await backend.deleteMatch(id);
 }
 
-export function binDaysLeft(m: Match): number {
-  return Math.max(0, Math.ceil(BIN_DAYS - (Date.now() - (m.deletedAt ?? 0)) / 86_400_000));
+function daysLeft(deletedAt: number): number {
+  return Math.max(0, Math.ceil(BIN_DAYS - (Date.now() - deletedAt) / 86_400_000));
+}
+
+export function binDaysLeft(m: { deletedAt?: number }): number {
+  return daysLeft(m.deletedAt ?? 0);
 }
 
 /** Permanently removes matches that have been in the bin for more than 30 days. */
@@ -152,7 +174,54 @@ export async function saveSettings(s: ClubSettings) {
   await backend.putSettings(s);
 }
 
-// ---------- Backup ----------
+// ---------- Snapshots (automatic, in-app) ----------
+
+let actor: string | undefined;
+/** Who is making changes (for snapshot labels). Set by the auth layer. */
+export function setActor(email: string | undefined) {
+  actor = email;
+}
+
+const matchLabel = (m: Match) => `${m.teams[0].name} v ${m.teams[1].name} · ${m.date}`;
+
+/**
+ * Saves an immutable copy (admins can read; nobody can change or delete it): the match, all players, club settings
+ * and the scorer/admin list. Fire-and-forget: offline it queues and uploads with everything else.
+ */
+export async function takeSnapshot(
+  reason: SnapshotReason,
+  match?: Match,
+  extra: { players?: Player[]; lostBalls?: number; note?: string } = {},
+) {
+  try {
+    const [players, settings, access] = await Promise.all([
+      extra.players ? Promise.resolve(extra.players) : backend.getAllPlayers(),
+      backend.getSettings(),
+      backend.getAccess(),
+    ]);
+    const snap: Snapshot = {
+      id: uid(),
+      createdAt: Date.now(),
+      reason,
+      by: actor,
+      matchId: match?.id,
+      label: match ? matchLabel(match) : 'Club roster',
+      match,
+      players,
+      settings,
+      access,
+      lostBalls: extra.lostBalls,
+      note: extra.note,
+    };
+    await backend.addSnapshot(snap);
+  } catch (e) {
+    console.error('Snapshot failed', e);
+  }
+}
+
+export const listSnapshots = (n = 100) => backend.listSnapshots(n);
+
+// ---------- Backup & restore ----------
 
 export interface Backup {
   app: 'ntu-cricket-scorer';
@@ -161,36 +230,97 @@ export interface Backup {
   players: Player[];
   matches: Match[];
   settings?: ClubSettings;
+  access?: Access;
+  /** A full copy of the club (all matches incl. bin, all players). Only full backups can delete on exact restore. */
+  full?: boolean;
 }
 
 async function exportFrom(source: Backend): Promise<Backup> {
-  const [players, matches, settings] = await Promise.all([
+  const [players, matches, settings, access] = await Promise.all([
     source.getAllPlayers(),
     source.getAllMatches(),
     source.getSettings(),
+    source.getAccess(),
   ]);
-  return { app: 'ntu-cricket-scorer', version: 1, exportedAt: new Date().toISOString(), players, matches, settings };
+  return { app: 'ntu-cricket-scorer', version: 1, exportedAt: new Date().toISOString(), players, matches, settings, access, full: true };
 }
 
 export const exportBackup = () => exportFrom(backend);
 
-/** Merges a backup into the active store: newer `updatedAt` wins, nothing is deleted. */
+export function snapshotToBackup(s: Snapshot): Backup {
+  return {
+    app: 'ntu-cricket-scorer',
+    version: 1,
+    exportedAt: new Date(s.createdAt).toISOString(),
+    players: s.players ?? [],
+    matches: s.match ? [s.match] : [],
+    settings: s.settings,
+    access: s.access,
+    full: false,
+  };
+}
+
+export function validateBackup(data: unknown): Backup {
+  const d = data as Backup;
+  if (d?.app !== 'ntu-cricket-scorer' || !Array.isArray(d.players) || !Array.isArray(d.matches)) {
+    throw new Error('This file is not an NTU Cricket Scorer backup.');
+  }
+  return d;
+}
+
+export type { RestoreMode };
+
+export interface RestoreResult {
+  players: number;
+  matches: number;
+  deletedPlayers: number;
+  deletedMatches: number;
+  settings: boolean;
+  access: boolean;
+}
+
+/** Applies a backup to the club database (see planRestore for exactly what MERGE and EXACT do). */
+export async function restoreBackup(data: Backup, mode: RestoreMode, keepAdmin?: string): Promise<RestoreResult> {
+  validateBackup(data);
+  const [players, matches, settings, access] = await Promise.all([
+    backend.getAllPlayers(),
+    backend.getAllMatches(),
+    backend.getSettings(),
+    backend.getAccess(),
+  ]);
+  const plan = planRestore({ players, matches, settings, access }, data, mode, keepAdmin);
+  await backend.bulkPut(plan.players, plan.matches, plan.deletePlayerIds, plan.deleteMatchIds);
+  if (plan.settings) await backend.putSettings(plan.settings);
+  if (plan.access) await backend.putAccess(plan.access);
+  return {
+    players: plan.players.length,
+    matches: plan.matches.length,
+    deletedPlayers: plan.deletePlayerIds.length,
+    deletedMatches: plan.deleteMatchIds.length,
+    settings: !!plan.settings,
+    access: !!plan.access,
+  };
+}
+/** Old name kept for callers: a merge. */
 export async function importBackup(data: Backup) {
-  if (data?.app !== 'ntu-cricket-scorer') throw new Error('This file is not an NTU Cricket Scorer backup.');
-  const [curPlayers, curMatches] = await Promise.all([backend.getAllPlayers(), backend.getAllMatches()]);
-  const pTime = new Map(curPlayers.map((p) => [p.id, p.updatedAt ?? 0]));
-  const mTime = new Map(curMatches.map((m) => [m.id, m.updatedAt ?? 0]));
-  const players = (data.players ?? []).filter((p) => !pTime.has(p.id) || (p.updatedAt ?? 0) > pTime.get(p.id)!);
-  const matches = (data.matches ?? []).filter((m) => !mTime.has(m.id) || (m.updatedAt ?? 0) > mTime.get(m.id)!);
-  await backend.bulkPut(players, matches);
-  return { players: players.length, matches: matches.length };
+  return restoreBackup(validateBackup(data), 'merge');
 }
 
 /** Cloud mode: copies whatever this device stored locally (before sync was turned on) into the club database. */
 export async function uploadLocalData() {
-  return importBackup(await exportFrom(localBackend));
+  const local = await exportFrom(localBackend);
+  // Never push this device's old access list or settings over the club's.
+  return restoreBackup({ ...local, access: undefined, settings: undefined, full: false }, 'merge');
 }
 
+/** This device has changes the club database hasn't confirmed yet (cloud). */
+export function usePendingUploads(): boolean {
+  return useSubscription(backend.subscribePending, [], false);
+}
+
+export function useBackupStatus(): BackupStatus | undefined {
+  return useSubscription<BackupStatus | undefined>(backend.subscribeBackupStatus, [], undefined);
+}
 // ---------- Hooks ----------
 
 function useSubscription<T>(subscribe: (cb: (v: T) => void) => () => void, deps: unknown[], initial: T): T {
