@@ -3,10 +3,12 @@ import { Link } from 'react-router-dom';
 import { MatchCard } from '../components/MatchCard';
 import { AppBar, Seg } from '../components/ui';
 import { useMatches, usePlayerNames } from '../db';
+import { useAuth } from '../data/auth';
 
 export default function Matches() {
   const matches = useMatches();
   const { nameOf } = usePlayerNames();
+  const { canScore } = useAuth();
   const [filter, setFilter] = useState<'all' | 'live' | 'completed'>('all');
   const list = (matches ?? []).filter((m) => filter === 'all' || m.status === filter);
   return (
@@ -15,9 +17,11 @@ export default function Matches() {
         title="Matches"
         back="/"
         right={
-          <Link to="/match/new" className="icon-btn" aria-label="New match">
-            ＋
-          </Link>
+          canScore ? (
+            <Link to="/match/new" className="icon-btn" aria-label="New match">
+              ＋
+            </Link>
+          ) : undefined
         }
       />
       <div className="page">
