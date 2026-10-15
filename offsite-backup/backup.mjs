@@ -114,11 +114,16 @@ async function main() {
   await setStatus({ ok: true, counts, commit, message: unchanged ? 'No changes this week' : `Saved ${commit}` });
 }
 
-// The Firestore client keeps a network connection open after the work is done, which would leave the job running
-// until it times out. Close it and exit explicitly.
+// The Firestore client keeps network connections open after the work is done (and closing them can itself hang),
+// which would leave the job running until GitHub's timeout. Everything is saved by this point, so exit right away.
+// A watchdog also stops a run that hangs for any other reason.
+setTimeout(() => {
+  console.error('Backup took longer than 10 minutes; stopping.');
+  process.exit(1);
+}, 10 * 60_000).unref();
+
 main()
-  .then(async () => {
-    await db.terminate();
+  .then(() => {
     console.log('Backup finished.');
     process.exit(0);
   })
