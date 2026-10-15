@@ -1592,3 +1592,35 @@ select.input {
   outline: 2px solid var(--brand-2);
   outline-offset: 1px;
 }
+.last-ball {
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+.zone-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.zone-btn {
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--chip);
+  font-weight: 650;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.zone-btn.on {
+  background: var(--brand-2);
+  border-color: var(--brand-2);
+  color: #fff;
+}
+.form-chart {
+  padding: 10px 14px 12px;
+}
+.cmp-table td.win {
+  color: var(--brand-2);
+  font-weight: 800;
+}

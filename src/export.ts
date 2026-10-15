@@ -93,3 +93,26 @@ export function toCsv(rows: (string | number)[][]): string {
     )
     .join('\n');
 }
+
+/** Short shareable link. On the live site, /m/<id> gives WhatsApp etc. a preview with the score. */
+export function matchLink(matchId: string): string {
+  const devHost = /^(localhost|127\.|10\.|192\.168\.|\[::1\])/.test(location.hostname);
+  return devHost ? `${location.origin}${location.pathname}#/match/${matchId}` : `${location.origin}/m/${matchId}`;
+}
+
+/** Opens the phone's share sheet (WhatsApp, Instagram…) with the match link, or copies it. */
+export async function shareMatchLink(m: Match): Promise<'shared' | 'copied' | 'cancelled'> {
+  const url = matchLink(m.id);
+  const teams = `${m.teams[0].name} v ${m.teams[1].name}`;
+  const text = m.status === 'live' ? `🔴 Follow ${teams} live, ball by ball 🏏` : `🏏 ${teams}: scorecard & highlights`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: teams, text, url });
+      return 'shared';
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return 'cancelled';
+    }
+  }
+  await navigator.clipboard.writeText(`${text}\n${url}`);
+  return 'copied';
+}

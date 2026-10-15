@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { computeMatch, editBall } from '../engine/engine';
 import { ballNumber, DISMISSAL_LABELS } from '../engine/format';
-import type { BallEvent, DismissalType, ExtraType, ID, Match } from '../types';
+import type { BallEvent, DismissalType, ExtraType, ID, Match, ShotZone } from '../types';
 import { askConfirm, Seg, Sheet, Switch } from './ui';
 
 type Delivery = 'legal' | ExtraType;
@@ -52,6 +52,10 @@ export function BallEditSheet({
   const [wType, setWType] = useState<DismissalType | undefined>(original.wicket?.type);
   const [outId, setOutId] = useState<ID | undefined>(original.wicket?.playerOutId);
   const [fielderId, setFielderId] = useState<ID | undefined>(original.wicket?.fielderId);
+  const [zone, setZone] = useState<ShotZone | undefined>(original.zone);
+  const [drop, setDrop] = useState<ID | undefined>(original.drop);
+  const [saveBy, setSaveBy] = useState<ID | undefined>(original.save?.by);
+  const [saveRuns, setSaveRuns] = useState(original.save?.runs ?? 2);
 
   const striker = swapped && original.nonStrikerId ? original.nonStrikerId : original.strikerId;
   const nonStriker = swapped && original.nonStrikerId ? original.strikerId : original.nonStrikerId;
@@ -69,6 +73,9 @@ export function BallEditSheet({
       boundary: canBeBoundary ? boundary : undefined,
       extra: delivery === 'legal' ? undefined : delivery,
       nbRunsFrom: delivery === 'nb' ? nbFrom : undefined,
+      zone: runsOffBat && runs > 0 ? zone : undefined,
+      drop,
+      save: saveBy ? { by: saveBy, runs: saveRuns } : undefined,
     };
     if (original.wicket && wType) {
       const crease = [striker, nonStriker].filter(Boolean) as ID[];
@@ -238,6 +245,55 @@ export function BallEditSheet({
         <div className="tiny muted">
           To add a wicket on this ball, undo back to it — a wicket changes who batted next.
         </div>
+      )}
+
+      {runsOffBat && runs > 0 && (
+        <div className="field">
+          <span>Shot zone</span>
+          <Seg
+            value={zone ?? 'none'}
+            onChange={(v) => setZone(v === 'none' ? undefined : (v as ShotZone))}
+            options={[
+              { value: 'none', label: '—' },
+              { value: 'straight', label: 'Straight' },
+              { value: 'off', label: 'Off' },
+              { value: 'leg', label: 'Leg' },
+              { value: 'behind', label: 'Behind' },
+            ]}
+          />
+        </div>
+      )}
+
+      <div className="grid-2">
+        <label className="field">
+          <span>🧤 Dropped catch by</span>
+          <select className="input" value={drop ?? ''} onChange={(e) => setDrop(e.target.value || undefined)}>
+            <option value="">—</option>
+            {bowlingTeam.playerIds.map((id) => (
+              <option key={id} value={id}>
+                {nameOf(id)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>🛡 Runs saved by</span>
+          <select className="input" value={saveBy ?? ''} onChange={(e) => setSaveBy(e.target.value || undefined)}>
+            <option value="">—</option>
+            {bowlingTeam.playerIds.map((id) => (
+              <option key={id} value={id}>
+                {nameOf(id)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {saveBy && (
+        <Seg
+          value={String(saveRuns)}
+          onChange={(v) => setSaveRuns(Number(v))}
+          options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: `Saved ${n}` }))}
+        />
       )}
 
       <button className="btn primary big block" onClick={save} disabled={wType === 'caught' && !fielderId}>

@@ -11,7 +11,7 @@ import {
   type MatchState,
 } from '../../engine/engine';
 import { DISMISSAL_LABELS } from '../../engine/format';
-import type { DismissalType, ExtraType, ID, Match, Player, ScoreEvent, TeamIdx } from '../../types';
+import type { BallEvent, DismissalType, ExtraType, ID, Match, Player, ScoreEvent, TeamIdx } from '../../types';
 
 export interface ScoringCtx {
   match: Match;
@@ -633,6 +633,83 @@ export function OversSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose: () => v
       >
         {diff === 0 ? 'No change' : `Set to ${overs} overs`}
       </button>
+    </Sheet>
+  );
+}
+// ---------- Dropped catch / runs saved (on a recorded ball) ----------
+
+/** Adds details (zone, drop, save) to an already-recorded ball. */
+export function patchBall(ctx: ScoringCtx, inningsIndex: number, eventIndex: number, p: Partial<BallEvent>) {
+  ctx.mutate((m) => ({
+    ...m,
+    innings: m.innings.map((inn, i) =>
+      i === inningsIndex
+        ? { ...inn, events: inn.events.map((e, j) => (j === eventIndex ? ({ ...e, ...p } as ScoreEvent) : e)) }
+        : inn,
+    ),
+  }));
+}
+
+export function FieldingSheet({
+  ctx,
+  mode,
+  eventIndex,
+  onClose,
+}: {
+  ctx: ScoringCtx;
+  mode: 'drop' | 'save';
+  eventIndex: number;
+  onClose: () => void;
+}) {
+  const { match, cur, nameOf } = ctx;
+  const ev = match.innings[cur.index].events[eventIndex] as BallEvent;
+  const [fielder, setFielder] = useState<ID | null>(mode === 'drop' ? (ev.drop ?? null) : (ev.save?.by ?? null));
+  const [runs, setRuns] = useState(ev.save?.runs ?? 2);
+  const atCrease = new Set([ev.strikerId, ev.nonStrikerId]);
+  const fielders = match.teams[cur.bowlingTeam].playerIds.filter((id) => !atCrease.has(id));
+  const patch = (p: Partial<BallEvent>) => patchBall(ctx, cur.index, eventIndex, p);
+
+  const existing = mode === 'drop' ? ev.drop : ev.save;
+  return (
+    <Sheet open title={mode === 'drop' ? '🧤 Dropped catch' : '🛡 Runs saved'} onClose={onClose}>
+      <div className="small muted">
+        {mode === 'drop'
+          ? 'Who put the catch down? It counts against their fielding in MVP (more so in a tight moment).'
+          : 'Who saved runs in the field (dive, boundary stop, sharp return)? Each run saved counts for their MVP.'}
+      </div>
+      <PlayerPickList options={fielders.map((id) => ({ id }))} selected={fielder} onPick={setFielder} nameOf={nameOf} />
+      {mode === 'save' && (
+        <>
+          <div className="section-title">Runs saved</div>
+          <Seg
+            value={String(runs)}
+            onChange={(v) => setRuns(Number(v))}
+            options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: String(n) }))}
+          />
+        </>
+      )}
+      <button
+        className="btn primary big block"
+        disabled={!fielder}
+        onClick={() => {
+          patch(mode === 'drop' ? { drop: fielder! } : { save: { by: fielder!, runs } });
+          toast(mode === 'drop' ? `Dropped catch: ${nameOf(fielder)}` : `${nameOf(fielder)} saved ${runs}`);
+          onClose();
+        }}
+      >
+        Save
+      </button>
+      {existing && (
+        <button
+          className="btn ghost block"
+          onClick={() => {
+            patch(mode === 'drop' ? { drop: undefined } : { save: undefined });
+            onClose();
+          }}
+        >
+          Remove
+        </button>
+      )}
     </Sheet>
   );
 }

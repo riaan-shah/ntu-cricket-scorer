@@ -70,6 +70,10 @@ export interface CareerStats {
   catches: number;
   stumpings: number;
   runOuts: number;
+  /** Catches dropped (scorer-recorded). */
+  drops: number;
+  /** Runs saved in the field (scorer-recorded). */
+  runsSaved: number;
   outOfCage: number;
   performances: MatchPerformance[];
 }
@@ -121,6 +125,8 @@ function emptyStats(playerId: ID): CareerStats {
     catches: 0,
     stumpings: 0,
     runOuts: 0,
+    drops: 0,
+    runsSaved: 0,
     outOfCage: 0,
     performances: [],
   };
@@ -237,6 +243,10 @@ function addInnings(
       if (d.type === 'stumped') f.stumpings++;
       if (d.type === 'runOut') f.runOuts++;
     }
+  }
+  for (const b of inn.balls) {
+    if (b.event.drop) get(b.event.drop).drops++;
+    if (b.event.save) get(b.event.save.by).runsSaved += b.event.save.runs;
   }
   for (const bw of inn.bowlers) {
     if (bw.balls === 0 && bw.runs === 0) continue;

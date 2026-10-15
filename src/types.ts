@@ -30,6 +30,9 @@ export type DismissalType =
 
 export type ExtraType = 'wd' | 'nb' | 'b' | 'lb';
 
+/** Cage shot zones, relative to the batter (off/leg flip for left-handers when drawn). */
+export type ShotZone = 'straight' | 'off' | 'leg' | 'behind';
+
 export interface MatchRules {
   /** Overs per innings. Can be increased (or reduced) mid-match. */
   overs: number;
@@ -50,6 +53,8 @@ export interface MatchRules {
   /** 0 = unlimited */
   maxOversPerBowler: number;
   noConsecutiveOvers: boolean;
+  /** Ask where each scoring shot went (cage shot zones). */
+  shotZones?: boolean;
 }
 
 export interface Team {
@@ -87,6 +92,12 @@ export interface BallEvent extends EventBase {
     playerOutId: ID;
     fielderId?: ID;
   };
+  /** Where a scoring shot went. */
+  zone?: ShotZone;
+  /** Fielder who dropped a catch on this ball. */
+  drop?: ID;
+  /** Runs a fielder stopped on this ball (dive, boundary save…). */
+  save?: { by: ID; runs: number };
 }
 
 export interface NewBatterEvent extends EventBase {

@@ -2,11 +2,13 @@ import { useEffect } from 'react';
 import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ConfirmHost, ToastHost } from './components/ui';
 import Home from './pages/Home';
+import Compare from './pages/Compare';
 import Leaderboard from './pages/Leaderboard';
 import Matches from './pages/Matches';
 import MatchView from './pages/MatchView';
 import NewMatch from './pages/NewMatch';
 import PlayerProfile from './pages/PlayerProfile';
+import Records from './pages/Records';
 import Players from './pages/Players';
 import Scoring from './pages/scoring/Scoring';
 import Settings from './pages/Settings';
@@ -33,6 +35,8 @@ export default function App() {
           <Route path="/players" element={<Players />} />
           <Route path="/players/:id" element={<PlayerProfile />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/records" element={<Records />} />
+          <Route path="/compare" element={<Compare />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Home />} />
         </Routes>

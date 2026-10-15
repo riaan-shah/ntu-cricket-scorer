@@ -11,6 +11,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'logo-192.png'],
+      // Live-link previews are served by a Vercel function; the offline app shell must not swallow them.
+      workbox: { navigateFallbackDenylist: [/^\/m\//, /^\/api\//] },
       manifest: {
         name: 'NTU Cricket Scorer',
         short_name: 'NTU Cricket',

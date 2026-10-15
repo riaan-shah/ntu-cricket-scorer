@@ -14,6 +14,10 @@ import {
 } from '../engine/stats';
 import { impactGrade, pressureLabel } from '../engine/impact';
 import { useAuth } from '../data/auth';
+import { FormChart } from '../components/FormChart';
+import { ShotChart } from '../components/ShotChart';
+import { shotZones } from '../engine/insights';
+import { battingForm, bowlingForm } from './Compare';
 import type { Player, PlayerRole } from '../types';
 
 const ROLES: PlayerRole[] = ['Batter', 'Bowler', 'All-rounder', 'Wicket-keeper'];
@@ -89,6 +93,7 @@ export default function PlayerProfile() {
   const { players, map, nameOf } = usePlayerNames();
   const matches = useMatches() ?? [];
   const stats = useMemo(() => computeCareerStats(matches), [matches]);
+  const zones = useMemo(() => shotZones(matches, id ?? ''), [matches, id]);
   const [tab, setTab] = useState<'bat' | 'bowl' | 'field'>('bat');
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
@@ -240,10 +245,53 @@ export default function PlayerProfile() {
               ['Run outs', s.runOuts],
               ['Stumpings', s.stumpings],
               ['Out of cage', s.outOfCage],
+              ['Runs saved', s.runsSaved],
+              ['Catches dropped', s.drops],
+              ['Net fielding', s.catches + s.runOuts + s.stumpings - s.drops],
+              ['Dismissals', s.catches + s.runOuts + s.stumpings],
             ])}
           </div>
         )}
         {!s && <div className="card empty">No completed matches yet.</div>}
+
+        {s && s.performances.length > 0 && (
+          <>
+            <div className="card">
+              <div className="card-head">
+                <h2>Batting form · last 10</h2>
+                <Link to={`/compare?a=${player.id}`} className="link-btn">
+                  Compare →
+                </Link>
+              </div>
+              <FormChart points={battingForm(s)} unit="runs" />
+            </div>
+            {bowlingForm(s).length > 0 && (
+              <div className="card">
+                <div className="card-head">
+                  <h2>Bowling form · wickets</h2>
+                </div>
+                <FormChart points={bowlingForm(s)} unit="wickets" color="var(--series-2)" />
+              </div>
+            )}
+          </>
+        )}
+
+        {zones.tagged > 0 && (
+          <div className="card">
+            <div className="card-head">
+              <h2>Shot chart</h2>
+              <span className="tiny muted">
+                {zones.tagged} shots · {zones.runs} runs
+              </span>
+            </div>
+            <div className="card-pad">
+              <ShotChart zones={zones.zones} leftHanded={player.battingStyle === 'Left-hand bat'} />
+              <div className="tiny muted center" style={{ marginTop: 6 }}>
+                Bowler's end at the top. Runs from shots the scorer tagged with a zone.
+              </div>
+            </div>
+          </div>
+        )}
 
         {s && s.performances.length > 0 && (
           <div className="card">

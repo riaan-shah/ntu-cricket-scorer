@@ -70,6 +70,12 @@ export default function Home() {
           <Link to="/leaderboard" className="tile">
             <span className="ico">🏆</span>Leaderboard
           </Link>
+          <Link to="/records" className="tile">
+            <span className="ico">📜</span>Records
+          </Link>
+          <Link to="/compare" className="tile">
+            <span className="ico">⚖️</span>Compare
+          </Link>
           <Link to="/settings" className="tile">
             <span className="ico">⚙️</span>Settings
           </Link>

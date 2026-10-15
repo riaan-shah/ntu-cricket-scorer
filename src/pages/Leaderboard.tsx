@@ -94,6 +94,8 @@ const BOARDS: Record<'bat' | 'bowl' | 'other', Board[]> = {
     { key: 'wins', title: 'Most wins', value: (s) => s.wins, show: (s) => `${s.wins}`, sub: (s) => `${s.matches} played` },
     { key: 'catches', title: 'Most catches', value: (s) => s.catches, show: (s) => `${s.catches}` },
     { key: 'ro', title: 'Most run outs + stumpings', value: (s) => s.runOuts + s.stumpings, show: (s) => `${s.runOuts + s.stumpings}` },
+    { key: 'saved', title: '🛡 Most runs saved', value: (s) => s.runsSaved, show: (s) => `${s.runsSaved}` },
+    { key: 'drops', title: '🧤 Most catches dropped', value: (s) => s.drops, show: (s) => `${s.drops}` },
     { key: 'cage', title: '🙈 Out of cage hall of shame', value: (s) => s.outOfCage, show: (s) => `${s.outOfCage}` },
   ],
 };

@@ -24,6 +24,7 @@ export const DEFAULT_RULES: MatchRules = {
   rebatWhenShort: true,
   maxOversPerBowler: 0,
   noConsecutiveOvers: true,
+  shotZones: true,
 };
 
 export const SUPER_OVER_WICKETS = 2;

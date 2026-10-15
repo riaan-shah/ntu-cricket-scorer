@@ -57,6 +57,17 @@ Screen** so it works offline at the cage.
 
 ## Stats
 
+- **Club records** (Home → Records): highest and lowest totals, highest scores, best figures, biggest wins (runs and
+  chasing), best partnerships, most sixes in an innings, and the out-of-cage hall of shame (career and single innings).
+- **Compare** (Home → Compare, or a profile's *Compare →*): two players side by side with the better figure highlighted,
+  head-to-head (each batting against the other's bowling: balls, runs, outs, SR), and recent batting form.
+- **Form charts** on every profile (last 10 innings' runs and wickets per match) and a **cage shot chart** built from shot zones.
+- **Shot zones**: after a scoring shot, one tap on Straight / Off / Leg / Behind under the pad (optional; can be switched
+  off in the rules). Off and leg flip for left-handers on the chart.
+- **Dropped catches and runs saved**: recorded on the same strip (or by editing a ball). They count in MVP fielding
+  impact (a drop costs 0.3 of a wicket's value; each run saved counts run-for-run, both weighted by pressure) and appear on
+  profiles, the Awards leaderboard and the stats spreadsheet.
+
 - **Player profile**: matches, W/L, POTM; batting (innings, runs, HS, average, SR, 4s/6s, 30s/50s, ducks); bowling (overs, wickets,
   best, economy, average, SR, maidens, dots, wides/no-balls); fielding (catches, run outs, stumpings, out-of-cage dismissals); recent form.
 - **Leaderboard**: all-time or by season. Batting, bowling and awards (including an out-of-cage hall of shame).
@@ -114,6 +125,10 @@ Not yet tracked (CricHeroes treats these as scorer-dependent too): runs saved an
 - The first person to sign in on a fresh project claims it as admin (Settings → Claim club as admin).
 - Sign-in is Google only. Every domain the site runs on must be listed in Firebase → Authentication → Settings → Authorized domains.
 - **Scorer lock**: one device holds the pen for a live match. Anyone else opening it sees *Being scored by Riaan*\n  and watches live, with a **Take over** button (confirm first; balls the other phone hasn't uploaded yet could be lost).\n  The lock is per device, so the same person on two phones is protected too.
+
+**Share live link**: the 📡 button (scoring screen, match page) opens the share menu with `…/m/<match-id>`. A Vercel
+function (`api/live.ts`) gives WhatsApp and other apps a preview showing the current score, then redirects into the app.
+Previews refresh at most every 30 seconds, and apps like WhatsApp also keep their own copy of a preview.
 
 **Backups** (optional extra safety): Settings → Download backup / Import / merge backup. Imports merge by id and the newest
 `updatedAt` wins, so nothing is deleted. Settings → Upload this phone's data moves anything scored before cloud sync into

@@ -230,6 +230,8 @@ export interface MatchMvp {
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
+/** A dropped catch costs this share of a wicket's value (a take earns the catcher 0.25 on top of the bowler's credit). */
+const DROP_SHARE = 0.3;
 
 export function computeMvp(
   match: Match,
@@ -317,6 +319,10 @@ export function computeMvp(
       } else {
         partnership += b.totalRuns;
       }
+
+      // Fielding the scorer recorded: a dropped catch costs a share of a wicket, runs saved count run-for-run.
+      if (ev.drop) get(ev.drop).field -= DROP_SHARE * wicketValue * mult;
+      if (ev.save && ev.save.runs > 0) get(ev.save.by).field += ev.save.runs * mult;
     });
   }
 

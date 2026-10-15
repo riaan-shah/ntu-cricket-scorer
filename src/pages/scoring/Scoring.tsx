@@ -17,16 +17,19 @@ import {
 } from '../../engine/engine';
 import { computeMvp, currentPressure } from '../../engine/impact';
 import { BallEditSheet } from '../../components/BallEditor';
+import { shareMatchLink } from '../../export';
 import { captainMark } from '../../engine/format';
 import { HeroesCard, MvpTable, PressureBadge } from '../../components/Mvp';
-import type { ExtraType, Match, ScoreEvent, TeamIdx } from '../../types';
+import type { ExtraType, Match, ScoreEvent, ShotZone, TeamIdx } from '../../types';
 import {
   AddPlayerSheet,
   BatterSheet,
   BowlerSheet,
   ExtrasSheet,
+  FieldingSheet,
   MatchSettingsSheet,
   OversSheet,
+  patchBall,
   RetireSheet,
   StartSheet,
   WicketSheet,
@@ -57,6 +60,7 @@ export default function Scoring() {
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [hideForced, setHideForced] = useState(false);
   const [editingBall, setEditingBall] = useState<number | null>(null);
+  const [fieldSheet, setFieldSheet] = useState<{ mode: 'drop' | 'save'; eventIndex: number } | null>(null);
 
   // Scorer lock (cloud mode): one device holds the pen; others watch and can take over.
   const lockOn = auth.mode === 'cloud' && !!auth.user;
@@ -117,6 +121,10 @@ export default function Scoring() {
     matchRef.current = next;
     setMatch(next);
     void saveMatch(next);
+  };
+  const shareLive = async () => {
+    const r = await shareMatchLink(match);
+    if (r === 'copied') toast('Live link copied — paste it in WhatsApp');
   };
   const takeOver = () => {
     if (!me) return;
@@ -202,6 +210,9 @@ export default function Scoring() {
         right={
           <>
             {meta && <SyncChip pending={meta.pendingWrites} />}
+            <button className="icon-btn" onClick={shareLive} title="Share live link" aria-label="Share live link">
+              📡
+            </button>
             <Link className="icon-btn" to={`/match/${match.id}`} title="Scorecard">
               📋
             </Link>
@@ -287,6 +298,11 @@ export default function Scoring() {
       </div>
       {live && cur.freeHit && <div className="free-hit">FREE HIT</div>}
 
+      {!live && !lockedOut && cur.balls.length > 0 && (
+        <div className="page" style={{ paddingBottom: 0 }}>
+          <LastBallStrip ctx={ctx} onField={(mode, eventIndex) => setFieldSheet({ mode, eventIndex })} />
+        </div>
+      )}
       {state.phase === 'break' && <InningsBreak match={match} ctx={ctx} onChangeOvers={() => setSheet('overs')} />}
       {state.phase === 'result' && (
         <MatchOver match={match} ctx={ctx} clubPar={clubParRate} onChangeOvers={() => setSheet('overs')} />
@@ -457,6 +473,8 @@ export default function Scoring() {
             </div>
           </div>
 
+          {!lockedOut && <LastBallStrip ctx={ctx} onField={(mode, eventIndex) => setFieldSheet({ mode, eventIndex })} />}
+
           <RecentBalls ctx={ctx} onEdit={lockedOut ? undefined : setEditingBall} />
         </div>
       )}
@@ -475,6 +493,9 @@ export default function Scoring() {
       {sheet === 'addPlayer' && <AddPlayerSheet ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet === 'settings' && <MatchSettingsSheet ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet === 'overs' && <OversSheet ctx={ctx} onClose={() => setSheet(null)} />}
+      {fieldSheet && (
+        <FieldingSheet ctx={ctx} mode={fieldSheet.mode} eventIndex={fieldSheet.eventIndex} onClose={() => setFieldSheet(null)} />
+      )}
       {editingBall !== null && (
         <BallEditSheet
           match={match}
@@ -503,6 +524,7 @@ export default function Scoring() {
                 ['🏏 Change overs', 'overs', true],
                 ['⚙️ Match settings', 'settings', true],
                 ['🏁 End innings now', 'declare', live && cur.started],
+                ['📡 Share live link', 'share', true],
                 ['📋 View full scorecard', 'scorecard', true],
                 ['🚫 Abandon match (keep in history)', 'abandon', true],
                 ['🗑 Delete match', 'delete', true],
@@ -522,6 +544,9 @@ export default function Scoring() {
                       void askConfirm({ title: `End ${batTeam.name}'s innings now?`, confirmLabel: 'End innings' }).then(
                         (ok) => ok && append({ kind: 'declare', ts: Date.now() }),
                       );
+                      break;
+                    case 'share':
+                      void shareLive();
                       break;
                     case 'scorecard':
                       nav(`/match/${match.id}`);
@@ -759,5 +784,53 @@ function SyncChip({ pending }: { pending: boolean }) {
     <span className="sync-chip" title={hint}>
       {label}
     </span>
+  );
+}
+const ZONE_SHORT: { zone: ShotZone; label: string }[] = [
+  { zone: 'straight', label: '⬆ Straight' },
+  { zone: 'off', label: 'Off side' },
+  { zone: 'leg', label: 'Leg side' },
+  { zone: 'behind', label: '⬇ Behind' },
+];
+
+/** Quick details for the ball just bowled: where the shot went, dropped catch, runs saved. All optional. */
+function LastBallStrip({ ctx, onField }: { ctx: ScoringCtx; onField: (mode: 'drop' | 'save', eventIndex: number) => void }) {
+  const { cur, match, nameOf } = ctx;
+  const last = cur.balls[cur.balls.length - 1];
+  if (!last) return null;
+  const ev = last.event;
+  const batRuns = !ev.extra || (ev.extra === 'nb' && (ev.nbRunsFrom ?? 'bat') === 'bat') ? ev.runs : 0;
+  const askZone = (match.rules.shotZones ?? true) && batRuns > 0;
+  return (
+    <div className="card last-ball">
+      <div className="row" style={{ gap: 8 }}>
+        <span className="tiny muted bold">LAST BALL</span>
+        <BallChip ball={last} />
+        <span className="small muted" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {nameOf(ev.bowlerId)} to {nameOf(ev.strikerId)}
+        </span>
+      </div>
+      {askZone && (
+        <div className="zone-row">
+          {ZONE_SHORT.map(({ zone, label }) => (
+            <button
+              key={zone}
+              className={`zone-btn ${ev.zone === zone ? 'on' : ''}`}
+              onClick={() => patchBall(ctx, cur.index, last.eventIndex, { zone: ev.zone === zone ? undefined : zone })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="row" style={{ gap: 8 }}>
+        <button className="btn sm" style={{ flex: 1 }} onClick={() => onField('drop', last.eventIndex)}>
+          🧤 {ev.drop ? `Dropped: ${nameOf(ev.drop)}` : 'Dropped catch'}
+        </button>
+        <button className="btn sm" style={{ flex: 1 }} onClick={() => onField('save', last.eventIndex)}>
+          🛡 {ev.save ? `${nameOf(ev.save.by)} saved ${ev.save.runs}` : 'Runs saved'}
+        </button>
+      </div>
+    </div>
   );
 }

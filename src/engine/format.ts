@@ -1,4 +1,11 @@
-import type { DismissalType, ID, Match, TeamIdx } from '../types';
+import type { DismissalType, ID, Match, ShotZone, TeamIdx } from '../types';
+
+export const ZONE_LABELS: Record<ShotZone, string> = {
+  straight: 'Straight',
+  off: 'Off side',
+  leg: 'Leg side',
+  behind: 'Behind',
+};
 import type { BallView, BatterLine } from './engine';
 
 export type NameOf = (id: ID | undefined | null) => string;
@@ -78,6 +85,9 @@ export function commentary(bv: BallView, nameOf: NameOf): string {
     const by = ev.wicket.fielderId ? ` (${nameOf(ev.wicket.fielderId)})` : '';
     parts.push(`OUT! ${out} ${how}${by}`);
   }
+  if (ev.zone) parts.push(ZONE_LABELS[ev.zone].toLowerCase());
+  if (ev.drop) parts.push(`dropped by ${nameOf(ev.drop)}`);
+  if (ev.save) parts.push(`${nameOf(ev.save.by)} saved ${ev.save.runs}`);
   if (bv.wasFreeHit) parts.push('(free hit)');
   return `${who}, ${parts.join(', ')}`;
 }

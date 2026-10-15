@@ -74,6 +74,12 @@ export function RulesEditor({
           onChange={(v) => set('rebatWhenShort', v)}
         />
         <ToggleRow
+          label="Record shot zones"
+          hint="One tap after each scoring shot (straight, off, leg, behind) for batters' shot charts"
+          checked={rules.shotZones ?? true}
+          onChange={(v) => set('shotZones', v)}
+        />
+        <ToggleRow
           label="Last man stands"
           hint="Final batter can carry on without a partner"
           checked={rules.lastManStands}

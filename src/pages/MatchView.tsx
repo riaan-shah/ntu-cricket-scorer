@@ -23,7 +23,7 @@ import { PressureChart } from '../components/PressureChart';
 import { BallEditSheet } from '../components/BallEditor';
 import { getDeviceId } from '../data/lock';
 import { SummaryCard } from '../components/SummaryCard';
-import { downloadText, exportNodeAsImage, matchFileName, textSummary } from '../export';
+import { downloadText, exportNodeAsImage, matchFileName, shareMatchLink, textSummary } from '../export';
 
 type Tab = 'summary' | 'scorecard' | 'commentary' | 'overs';
 
@@ -178,6 +178,15 @@ export default function MatchView() {
               ▶ Resume scoring
             </Link>
           )}
+          <button
+            className={`btn sm ${match.status === 'live' ? 'primary' : ''}`}
+            onClick={async () => {
+              const r = await shareMatchLink(match);
+              if (r === 'copied') toast('Link copied — paste it in WhatsApp');
+            }}
+          >
+            {match.status === 'live' ? '📡 Share live link' : '🔗 Share link'}
+          </button>
           <button className="btn sm" onClick={() => shareImage('summary')} disabled={busy}>
             {busy ? 'Rendering…' : '🖼 Share summary'}
           </button>
