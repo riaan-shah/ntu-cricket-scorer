@@ -4,6 +4,7 @@ import { AppBar, Avatar, Empty } from '../components/ui';
 import { useMatches, usePlayerNames } from '../db';
 import { oversText } from '../engine/engine';
 import { computeRecords } from '../engine/records';
+import { pairRecords } from '../engine/insights';
 
 function Section({ title, empty, children }: { title: string; empty: boolean; children: ReactNode }) {
   return (
@@ -59,6 +60,7 @@ export default function Records() {
   const matches = useMatches();
   const { nameOf } = usePlayerNames();
   const r = useMemo(() => computeRecords(matches ?? []), [matches]);
+  const pairs = useMemo(() => pairRecords(matches ?? []).slice(0, 5), [matches]);
   const m = (id: string) => `/match/${id}`;
 
   return (
@@ -148,6 +150,18 @@ export default function Records() {
                   to={m(p.matchId)}
                   title={p.batterIds.map((id) => nameOf(id)).join(' & ')}
                   sub={`${p.team} · ${p.date} · ${p.balls} balls`}
+                  value={p.runs}
+                />
+              ))}
+            </Section>
+
+            <Section title="Best pairs · most runs together" empty={!pairs.length}>
+              {pairs.map((p, i) => (
+                <Row
+                  key={p.ids.join()}
+                  rank={i + 1}
+                  title={p.ids.map((id) => nameOf(id)).join(' & ')}
+                  sub={`${p.innings} stand${p.innings === 1 ? '' : 's'} · avg ${(p.runs / p.innings).toFixed(1)} · best ${p.best}${p.big ? ` · ${p.big}× 30+` : ''}`}
                   value={p.runs}
                 />
               ))}

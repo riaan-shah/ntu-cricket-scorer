@@ -17,7 +17,10 @@ import {
 import { useAuth } from '../data/auth';
 import { computeMatch, inningsLabel, oversText } from '../engine/engine';
 import { ballNumber, commentary } from '../engine/format';
-import { computeMvp } from '../engine/impact';
+import { chaseWinTimeline, computeMvp } from '../engine/impact';
+import { inningsPhases, PHASE_LABELS, PHASES, phaseRangeLabel } from '../engine/insights';
+import { ManhattanChart, WinProbChart, WormChart } from '../components/MatchCharts';
+import type { Match, TeamIdx } from '../types';
 import { HeroesCard, MvpTable } from '../components/Mvp';
 import { PressureChart } from '../components/PressureChart';
 import { BallEditSheet } from '../components/BallEditor';
@@ -25,7 +28,7 @@ import { getDeviceId } from '../data/lock';
 import { SummaryCard } from '../components/SummaryCard';
 import { downloadText, exportNodeAsImage, matchFileName, shareMatchLink, textSummary } from '../export';
 
-type Tab = 'summary' | 'scorecard' | 'commentary' | 'overs';
+type Tab = 'summary' | 'scorecard' | 'commentary' | 'overs' | 'analysis';
 
 export default function MatchView() {
   const { id } = useParams();
@@ -42,6 +45,7 @@ export default function MatchView() {
   const summaryRef = useRef<HTMLDivElement>(null);
   const state = useMemo(() => (match ? computeMatch(match) : null), [match]);
   const clubParRate = useClubPar(match);
+  const win = useMemo(() => (match && state ? chaseWinTimeline(match, state, clubParRate) : null), [match, state, clubParRate]);
   const mvp = useMemo(
     () => (match && state ? computeMvp(match, state, { clubPar: clubParRate }) : null),
     [match, state, clubParRate],
@@ -51,6 +55,7 @@ export default function MatchView() {
   if (!match || !state || !mvp) return null;
   const bpo = match.rules.ballsPerOver;
   const result = match.result ?? state.result;
+  const mainInnings = state.innings.filter((i) => !i.superOver);
 
   // Ball edits: scorers only, not in the bin, and not while another device holds a live match's scoring lock.
   const canEdit = canScore && !match.deletedAt;
@@ -122,7 +127,7 @@ export default function MatchView() {
     <div>
       <AppBar title={`${match.teams[0].name} v ${match.teams[1].name}`} back="/matches" />
       <div className="tabs no-print">
-        {(['summary', 'scorecard', 'commentary', 'overs'] as Tab[]).map((t) => (
+        {(['summary', 'scorecard', 'commentary', 'overs', 'analysis'] as Tab[]).map((t) => (
           <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
             {t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -203,6 +208,9 @@ export default function MatchView() {
 
         {tab === 'summary' && (
           <>
+            {match.status === 'live' && win && state.innings[1]?.started && !state.innings[1].complete && (
+              <WinBanner match={match} chasing={win.chasing} pct={win.now} />
+            )}
             <ScaledPreview width={960}>
               <SummaryCard match={match} state={state} nameOf={nameOf} clubName={settings.clubName} tagline={settings.exportTagline} clubPar={clubParRate} />
             </ScaledPreview>
@@ -415,6 +423,73 @@ export default function MatchView() {
           </div>
         )}
 
+        {tab === 'analysis' && (
+          <div className="stack">
+            {win && (
+              <div className="card">
+                <div className="card-head">
+                  <h2>Win probability</h2>
+                  <span className="tiny muted">built on the Pressure Index</span>
+                </div>
+                <div className="card-pad" style={{ paddingBottom: 0 }}>
+                  <WinBanner match={match} chasing={win.chasing} pct={win.now} flat />
+                </div>
+                <WinProbChart
+                  points={win.points}
+                  maxBalls={state.innings[1].maxBalls}
+                  bpo={bpo}
+                  team={match.teams[win.chasing].name}
+                />
+              </div>
+            )}
+            <div className="card">
+              <div className="card-head">
+                <h2>Manhattan · runs per over</h2>
+              </div>
+              <ManhattanChart match={match} innings={mainInnings} />
+            </div>
+            <div className="card">
+              <div className="card-head">
+                <h2>Worm · running total</h2>
+              </div>
+              <WormChart match={match} innings={mainInnings} />
+            </div>
+            {mainInnings.map((inn) => {
+              const ph = inningsPhases(inn, bpo);
+              const overs = Math.ceil(inn.maxBalls / bpo);
+              return (
+                <div className="card" key={inn.index}>
+                  <div className="card-head">
+                    <h2>{match.teams[inn.battingTeam].name} · phases</h2>
+                  </div>
+                  <table className="mini-table">
+                    <thead>
+                      <tr>
+                        <th>Phase</th>
+                        <th>Runs</th>
+                        <th>Wkts</th>
+                        <th>RR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PHASES.filter((p) => phaseRangeLabel(p, overs)).map((p) => (
+                        <tr key={p}>
+                          <td>
+                            {PHASE_LABELS[p]} <span className="tiny muted">{phaseRangeLabel(p, overs)}</span>
+                          </td>
+                          <td className="bold">{ph[p].runs}</td>
+                          <td>{ph[p].wickets}</td>
+                          <td>{ph[p].balls ? ((ph[p].runs * bpo) / ph[p].balls).toFixed(2) : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {tab === 'scorecard' && (
           <ScorecardExport match={match} state={state} nameOf={nameOf} clubName={settings.clubName} clubPar={clubParRate} />
         )}
@@ -495,6 +570,27 @@ function ScaledPreview({ width, children }: { width: number; children: ReactNode
     <div ref={outer} className="sm-preview" style={{ height }}>
       <div ref={inner} style={{ width, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
         {children}
+      </div>
+    </div>
+  );
+}
+/** "Net Ninjas 62% · Cage Kings 38%" as a split bar. */
+function WinBanner({ match, chasing, pct, flat }: { match: Match; chasing: TeamIdx; pct: number; flat?: boolean }) {
+  const defending = (1 - chasing) as TeamIdx;
+  return (
+    <div className={flat ? 'stack' : 'card card-pad stack'} style={{ gap: 6 }}>
+      {!flat && <div className="section-title">Win probability · live</div>}
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span>
+          <b>{match.teams[chasing].name}</b> {pct}%
+        </span>
+        <span>
+          {100 - pct}% <b>{match.teams[defending].name}</b>
+        </span>
+      </div>
+      <div className="win-bar" role="img" aria-label={`${match.teams[chasing].name} ${pct}%`}>
+        <span style={{ width: `${pct}%`, background: 'var(--series-2)' }} />
+        <span style={{ width: `${100 - pct}%`, background: 'var(--series-1)' }} />
       </div>
     </div>
   );

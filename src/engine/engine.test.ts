@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BallEvent, Match, MatchRules, ScoreEvent } from '../types';
-import { computeMatch, DEFAULT_RULES, editBall, startSuperOver, undoLast } from './engine';
+import { changeOvers, computeMatch, DEFAULT_RULES, editBall, startSuperOver, undoLast } from './engine';
 import { computeMvp } from './impact';
 import { computeCareerStats } from './stats';
 
@@ -365,5 +365,54 @@ describe('editing past balls', () => {
     const reopened = editBall(m, 1, 1, null);
     expect(reopened.status).toBe('live');
     expect(reopened.result).toBeUndefined();
+  });
+});
+describe('rain rule (overs cut after the first innings)', () => {
+  // Alpha make 72 in 6 overs, then (optionally) some chase balls and wickets.
+  function afterFirst(chaseBalls: number[] = [], wickets = 0) {
+    const m = makeMatch(['a1', 'a2', 'a3', 'a4', 'a5'], ['b1', 'b2', 'b3', 'b4', 'b5'], { overs: 6, ballsPerOver: 6 });
+    const s = scorer(m);
+    s.start('a1', 'a2', 'b1');
+    for (let i = 0; i < 36; i++) s.ball({ runs: i % 3 === 0 ? 4 : 1 }); // 72 runs
+    s.nextInnings();
+    s.start('b1', 'b2', 'a1');
+    const extra = ['b3', 'b4', 'b5'];
+    for (const r of chaseBalls) s.runs(r);
+    for (let w = 0; w < wickets; w++) {
+      s.out();
+      s.batter(extra[w]);
+    }
+    return m;
+  }
+
+  it('no change when overs are cut during the first innings', () => {
+    const m = makeMatch(['a1', 'a2'], ['b1', 'b2'], { overs: 6 });
+    const s = scorer(m);
+    s.start('a1', 'a2', 'b1');
+    s.runs(4);
+    expect(changeOvers(m, 4).rain).toBeUndefined();
+  });
+
+  it('cutting the chase at the break lowers the target a little less than proportionally', () => {
+    const m = afterFirst();
+    expect(computeMatch(m).innings[0].runs).toBe(72);
+    const cut = changeOvers(m, 4);
+    const target = computeMatch(cut).innings[1].target!;
+    expect(target).toBeGreaterThan(Math.floor((72 * 4) / 6)); // proportional would be 48+1
+    expect(target).toBeLessThan(73);
+  });
+
+  it('wickets already lost mean less is taken off the target', () => {
+    const none = computeMatch(changeOvers(afterFirst([1, 1, 1, 1, 1, 1], 0), 4)).innings[1].target!;
+    const three = computeMatch(changeOvers(afterFirst([1, 1, 1, 1, 1, 1], 3), 4)).innings[1].target!;
+    expect(three).toBeGreaterThanOrEqual(none);
+  });
+
+  it('marks the result with the revised target', () => {
+    const m = changeOvers(afterFirst(), 1);
+    const target = computeMatch(m).innings[1].target!;
+    const s = scorer(m);
+    for (let i = 0; i < 6; i++) s.runs(0);
+    expect(computeMatch(m).result?.text).toBe(`Alpha won by ${target - 1} runs (revised target ${target})`);
   });
 });

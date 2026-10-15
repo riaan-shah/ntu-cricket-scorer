@@ -76,6 +76,34 @@ export interface PressureInput {
   shock?: number;
 }
 
+/** Runs needed ÷ runs this side can expect (1 = exactly on par), plus wicket shock. */
+function difficulty(s: PressureInput): number {
+  const ballsLeft = Math.max(0, s.maxBalls - s.legalBalls);
+  const chasing = s.target !== null;
+  const goal = chasing ? s.target! : s.par * s.maxBalls;
+  const needed = goal - s.runs;
+  const wLeft = Math.max(0, s.maxWickets - s.wickets);
+  const resource = 0.45 + 0.55 * Math.sqrt(s.maxWickets > 0 ? wLeft / s.maxWickets : 0);
+  const phase = s.legalBalls / s.maxBalls;
+  const parRate = chasing ? Math.max(0.1, (s.target! - 1) / s.maxBalls) : s.par;
+  const expected = ballsLeft * parRate * (1 + 0.3 * phase) * resource;
+  return Math.max(0, needed) / Math.max(expected, 0.5) + (s.shock ?? 0);
+}
+
+/**
+ * Chasing side's chance of winning (0–100), from the same difficulty as the Pressure Index: on par = 50%, and the
+ * curve sharpens as balls run out (late in a chase, being behind the rate is much harder to recover from).
+ */
+export function winProbability(s: PressureInput): number {
+  if (s.target === null) return 50;
+  if (s.runs >= s.target) return 100;
+  if (s.legalBalls >= s.maxBalls || s.wickets >= s.maxWickets) return s.runs === s.target - 1 ? 50 : 0;
+  const phase = s.legalBalls / s.maxBalls;
+  const k = 1.8 + 3.5 * phase;
+  const p = 1 / (1 + Math.exp(k * (difficulty(s) - 1)));
+  return Math.round(Math.min(99, Math.max(1, p * 100)));
+}
+
 export function pressureIndex(s: PressureInput): number {
   const ballsLeft = Math.max(0, s.maxBalls - s.legalBalls);
   const chasing = s.target !== null;
@@ -84,17 +112,9 @@ export function pressureIndex(s: PressureInput): number {
   if (chasing && needed <= 0) return 0;
   if (ballsLeft === 0) return chasing ? 100 : 0;
 
-  // Fewer wickets in hand = less freedom to attack.
-  const wLeft = Math.max(0, s.maxWickets - s.wickets);
-  const resource = 0.45 + 0.55 * Math.sqrt(s.maxWickets > 0 ? wLeft / s.maxWickets : 0);
-  // Match phase: 0 = first ball, 1 = last ball. Sides score faster at the death.
+  // Match phase: 0 = first ball, 1 = last ball.
   const phase = s.legalBalls / s.maxBalls;
-  const parRate = chasing ? Math.max(0.1, (s.target! - 1) / s.maxBalls) : s.par;
-  const expected = ballsLeft * parRate * (1 + 0.3 * phase) * resource;
-
-  // Difficulty: runs needed vs runs this side can expect to make (1 = exactly on par), plus any wicket shock.
-  const difficulty = Math.max(0, needed) / Math.max(expected, 0.5) + (s.shock ?? 0);
-  let pi = 1 / (1 + Math.exp(-1.8 * (difficulty - 1)));
+  let pi = 1 / (1 + Math.exp(-1.8 * (difficulty(s) - 1)));
   pi *= 0.75 + 0.25 * phase; // pressure builds as the innings goes on
   if (!chasing) pi *= 0.85; // setting a total carries less pressure than chasing one
   return Math.round(Math.min(100, Math.max(0, pi * 100)));
@@ -154,19 +174,33 @@ function maxWicketsFor(match: Match, inn: InningsState) {
 }
 
 /** Pressure before every delivery of an innings (with wicket shock), plus the pressure before the next ball. */
-function inningsPressure(match: Match, inn: InningsState, par: number): { points: PressurePoint[]; next: number | null } {
+function inningsPressure(
+  match: Match,
+  inn: InningsState,
+  par: number,
+): { points: PressurePoint[]; next: number | null; nextWin: number | null } {
   const maxWickets = maxWicketsFor(match, inn);
   const goal = Math.max(1, inn.target ?? par * inn.maxBalls);
   let runs = 0;
   let wickets = 0;
   let legal = 0;
   let shock = 0;
-  const pi = (r: number, w: number, l: number) =>
-    pressureIndex({ runs: r, wickets: w, legalBalls: l, maxBalls: inn.maxBalls, maxWickets, target: inn.target, par, shock });
+  const input = (r: number, w: number, l: number): PressureInput => ({
+    runs: r,
+    wickets: w,
+    legalBalls: l,
+    maxBalls: inn.maxBalls,
+    maxWickets,
+    target: inn.target,
+    par,
+    shock,
+  });
+  const pi = (r: number, w: number, l: number) => pressureIndex(input(r, w, l));
+  const win = (r: number, w: number, l: number) => (inn.target !== null ? winProbability(input(r, w, l)) : undefined);
 
   const points: PressurePoint[] = [];
   for (const b of inn.balls) {
-    points.push({ ball: legal, pi: pi(runs, wickets, legal), eventIndex: b.eventIndex });
+    points.push({ ball: legal, pi: pi(runs, wickets, legal), eventIndex: b.eventIndex, win: win(runs, wickets, legal) });
     // Runs scored repay earlier wicket shock; a wicket on this ball then adds new shock.
     shock = Math.max(0, shock - ((b.scoreAfter.runs - runs) * SHOCK_PAYOFF_PER_RUN) / goal);
     runs = b.scoreAfter.runs;
@@ -179,7 +213,8 @@ function inningsPressure(match: Match, inn: InningsState, par: number): { points
     }
   }
   const next = inn.started && !inn.complete ? pi(inn.runs, inn.wickets, inn.legalBalls) : null;
-  return { points, next };
+  const finalWin = win(inn.runs, inn.wickets, inn.legalBalls);
+  return { points, next, nextWin: finalWin ?? null };
 }
 
 /** Pressure on the batting side right now (before the next ball). */
@@ -211,6 +246,8 @@ export interface PressurePoint {
   ball: number;
   pi: number;
   eventIndex: number;
+  /** Chasing side's win % before this delivery (chases only). */
+  win?: number;
 }
 
 export interface Heroes {
@@ -395,4 +432,19 @@ function buildSummaries(state: MatchState, bpo: number): Map<ID, string> {
     }
   }
   return new Map([...parts].map(([id, p]) => [id, p.join(' · ')]));
+}
+
+/** Chase win-probability timeline (before each ball, then the current/final state). Null outside a chase. */
+export function chaseWinTimeline(
+  match: Match,
+  state: MatchState,
+  clubParRate?: number,
+): { chasing: TeamIdx; points: { ball: number; win: number }[]; now: number } | null {
+  const inn = state.innings[1];
+  if (!inn || inn.target === null) return null;
+  const { points, nextWin } = inningsPressure(match, inn, matchPar(state, clubParRate));
+  const series = points.filter((p) => p.win !== undefined).map((p) => ({ ball: p.ball, win: p.win! }));
+  const now = nextWin ?? 50;
+  series.push({ ball: inn.legalBalls, win: now });
+  return { chasing: inn.battingTeam, points: series, now };
 }

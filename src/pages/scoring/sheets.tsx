@@ -6,6 +6,8 @@ import { RulesEditor } from '../../components/RulesEditor';
 import { askConfirm, Seg, Sheet, ToggleRow, toast } from '../../components/ui';
 import {
   allowedOnFreeHit,
+  changeOvers,
+  chaseTarget,
   oversText,
   type InningsState,
   type MatchState,
@@ -587,11 +589,19 @@ export function OversSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose: () => v
   const bpo = match.rules.ballsPerOver;
   const current = match.rules.overs;
   const [overs, setOvers] = useState(current);
-  // Overs already bowled in the current innings (or the longest innings so far).
-  const bowled = Math.max(...state.innings.map((i) => i.legalBalls), 0);
+  // Overs already bowled in the innings in progress (a finished innings can't be cut short).
+  const bowled = cur.complete ? 0 : cur.legalBalls;
   const bowledOvers = Math.ceil(bowled / bpo);
   const diff = overs - current;
-  const target = cur.target;
+  // Overs changed after the first innings: preview the rain-rule target before saving.
+  const firstDone = state.innings[0]?.complete && state.innings.length <= 2;
+  const currentTarget = firstDone ? (state.innings[1]?.target ?? chaseTarget(match, 1, state.innings[0].runs)) : null;
+  const revisedTarget = firstDone
+    ? (() => {
+        const next = changeOvers(match, overs);
+        return chaseTarget(next, 1, state.innings[0].runs);
+      })()
+    : null;
   return (
     <Sheet open title="Change overs" onClose={onClose}>
       <div className="card card-pad stack">
@@ -619,15 +629,29 @@ export function OversSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose: () => v
           {bowledOvers} over{bowledOvers === 1 ? ' has' : 's have'} already been bowled — reducing below that ends the innings.
         </div>
       )}
-      {target !== null && diff !== 0 && (
-        <div className="small muted">The target stays at {target}; only the balls available change.</div>
+      {revisedTarget !== null && diff !== 0 && (
+        <div className="card card-pad small" style={{ borderColor: 'var(--gold)' }}>
+          🌧 <b>Rain rule:</b> target {revisedTarget === currentTarget ? 'stays' : 'changes'} from <b>{currentTarget}</b>
+          {revisedTarget !== currentTarget && (
+            <>
+              {' '}
+              to <b>{revisedTarget}</b>
+            </>
+          )}{' '}
+          because {match.teams[state.innings[0].bowlingTeam].name} now get{diff < 0 ? ' fewer' : ' more'} overs
+          {cur.wickets > 0 ? ` with ${cur.wickets} wicket${cur.wickets === 1 ? '' : 's'} already down` : ''}.
+        </div>
       )}
       <button
         className="btn primary big block"
         disabled={diff === 0}
         onClick={() => {
-          ctx.mutate((m) => ({ ...m, rules: { ...m.rules, overs } }));
-          toast(`Now ${overs} over${overs === 1 ? '' : 's'} a side`);
+          ctx.mutate((m) => changeOvers(m, overs));
+          toast(
+            revisedTarget !== null && revisedTarget !== currentTarget
+              ? `Now ${overs} overs · revised target ${revisedTarget}`
+              : `Now ${overs} over${overs === 1 ? '' : 's'} a side`,
+          );
           onClose();
         }}
       >

@@ -177,6 +177,11 @@ export interface Match {
   motmId?: ID;
   /** Set when the match is in the bin (restorable for 30 days). */
   deletedAt?: number;
+  /**
+   * Rain rule: set when overs change after the first innings is complete. overs1 = overs team 1 batted,
+   * 2 = batting resources left to team 2 (same units as esources()); the chase target is revised from these.
+   */
+  rain?: { overs1: number; r2: number };
   scorer?: ScorerLock;
 }
 

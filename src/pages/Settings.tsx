@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { RulesEditor } from '../components/RulesEditor';
-import { AppBar, Seg, toast } from '../components/ui';
+import { AppBar, Seg, ToggleRow, toast } from '../components/ui';
+import { useSunMode } from '../sunMode';
 import { normalizeEmail, useAuth, type Access } from '../data/auth';
 import { localDataCounts } from '../data/local';
 import { exportBackup, importBackup, saveSettings, uploadLocalData, useMatches, usePlayers, useSettings } from '../db';
@@ -15,6 +16,7 @@ export default function Settings() {
   const [draft, setDraft] = useState<ClubSettings>(saved);
   const fileRef = useRef<HTMLInputElement>(null);
   const cloud = auth.mode === 'cloud';
+  const [sun, setSun] = useSunMode();
 
   useEffect(() => {
     setDraft(saved);
@@ -129,6 +131,18 @@ export default function Settings() {
             />
             {cloud && auth.canScore && <UploadLocalData />}
           </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head">
+            <h2>Display (this phone)</h2>
+          </div>
+          <ToggleRow
+            label="☀️ Sun mode"
+            hint="Large text, bigger buttons and maximum contrast for scoring outdoors. Also on the scoring screen."
+            checked={sun}
+            onChange={setSun}
+          />
         </div>
 
         <div className="card card-pad small muted">

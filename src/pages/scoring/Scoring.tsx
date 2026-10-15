@@ -11,6 +11,7 @@ import {
   oversTextFull,
   runRate,
   strikeRate,
+  chaseTarget,
   inningsLabel,
   startSuperOver,
   undoLast,
@@ -18,6 +19,7 @@ import {
 import { computeMvp, currentPressure } from '../../engine/impact';
 import { BallEditSheet } from '../../components/BallEditor';
 import { shareMatchLink } from '../../export';
+import { useSunMode } from '../../sunMode';
 import { captainMark } from '../../engine/format';
 import { HeroesCard, MvpTable, PressureBadge } from '../../components/Mvp';
 import type { ExtraType, Match, ScoreEvent, ShotZone, TeamIdx } from '../../types';
@@ -60,6 +62,7 @@ export default function Scoring() {
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [hideForced, setHideForced] = useState(false);
   const [editingBall, setEditingBall] = useState<number | null>(null);
+  const [sun, setSun] = useSunMode();
   const [fieldSheet, setFieldSheet] = useState<{ mode: 'drop' | 'save'; eventIndex: number } | null>(null);
 
   // Scorer lock (cloud mode): one device holds the pen; others watch and can take over.
@@ -210,6 +213,18 @@ export default function Scoring() {
         right={
           <>
             {meta && <SyncChip pending={meta.pendingWrites} />}
+            <button
+              className="icon-btn"
+              onClick={() => {
+                setSun(!sun);
+                toast(sun ? 'Sun mode off' : '☀️ Sun mode: big text, high contrast');
+              }}
+              title="Sun mode (large text, high contrast)"
+              aria-label="Toggle sun mode"
+              aria-pressed={sun}
+            >
+              {sun ? '🌙' : '☀️'}
+            </button>
             <button className="icon-btn" onClick={shareLive} title="Share live link" aria-label="Share live link">
               📡
             </button>
@@ -293,6 +308,7 @@ export default function Scoring() {
             Need {Math.max(0, cur.target - cur.runs)} run{cur.target - cur.runs === 1 ? '' : 's'} from {ballsLeft} ball
             {ballsLeft === 1 ? '' : 's'} · RRR{' '}
             {ballsLeft > 0 ? (((cur.target - cur.runs) * bpo) / ballsLeft).toFixed(2) : '-'}
+            {match.rain && cur.index === 1 && <> · 🌧 revised target {cur.target}</>}
           </div>
         )}
       </div>
@@ -670,7 +686,9 @@ function InningsBreak({ match, ctx, onChangeOvers }: { match: Match; ctx: Scorin
           {match.teams[first.battingTeam].name} {first.runs}/{first.wickets} ({oversText(first.legalBalls, bpo)} ov)
         </div>
         <div>
-          <b>{match.teams[chasing].name}</b> need <b>{first.runs + 1}</b> runs from {first.maxBalls} balls
+          <b>{match.teams[chasing].name}</b> need <b>{chaseTarget(match, first.index + 1, first.runs)}</b> runs from{' '}
+          {first.superOver ? first.maxBalls : match.rules.overs * bpo} balls
+          {!first.superOver && match.rain && <> (🌧 revised target)</>}
           {first.superOver && <> (2 wickets)</>}
         </div>
         <button

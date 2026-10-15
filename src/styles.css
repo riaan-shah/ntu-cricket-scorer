@@ -1624,3 +1624,119 @@ select.input {
   color: var(--brand-2);
   font-weight: 800;
 }
+
+.win-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 99px;
+  overflow: hidden;
+  gap: 2px;
+  background: var(--card);
+}
+.win-bar span {
+  display: block;
+  height: 100%;
+}
+
+/* ---------- Sun mode: large text, maximum contrast (scoring outdoors) ---------- */
+:root[data-sun] {
+  --brand: #002f31;
+  --brand-2: #005c58;
+  --bg: #ffffff;
+  --card: #ffffff;
+  --text: #000000;
+  --muted: #1c1c1c;
+  --line: #000000;
+  --chip: #eeeeee;
+  --four: #0047a8;
+  --six: #5b0aa0;
+  --wicket: #b30000;
+  --extra: #7a3e00;
+  --accent: #b30000;
+  --pressure-base: #eeeeee;
+  --shadow: none;
+  color-scheme: light;
+}
+:root[data-sun] body {
+  font-size: 18px;
+  background: #fff;
+  color: #000;
+}
+:root[data-sun] .card,
+:root[data-sun] .btn,
+:root[data-sun] .input,
+:root[data-sun] .choice,
+:root[data-sun] .zone-btn {
+  border-width: 2px;
+  border-color: #000;
+}
+:root[data-sun] .pad {
+  gap: 10px;
+}
+:root[data-sun] .pad button {
+  min-height: 78px;
+  font-size: 30px;
+  font-weight: 900;
+  border: 2px solid #000;
+  color: #000;
+}
+:root[data-sun] .pad button.four {
+  background: var(--four);
+  color: #fff;
+}
+:root[data-sun] .pad button.six {
+  background: var(--six);
+  color: #fff;
+}
+:root[data-sun] .pad button.extra {
+  font-size: 20px;
+  color: #000;
+  background: #ffd84d;
+}
+:root[data-sun] .pad button.util {
+  font-size: 18px;
+  color: #000;
+}
+:root[data-sun] .pad button.out,
+:root[data-sun] .pad button.cage {
+  font-size: 22px;
+  color: #fff;
+}
+:root[data-sun] .score-hero {
+  background: #000;
+}
+:root[data-sun] .score-hero .big {
+  font-size: 60px;
+}
+:root[data-sun] .score-hero .team,
+:root[data-sun] .score-hero .meta {
+  font-size: 17px;
+  opacity: 1;
+}
+:root[data-sun] .mini-table {
+  font-size: 18px;
+}
+:root[data-sun] .mini-table th {
+  color: #000;
+  font-size: 14px;
+}
+:root[data-sun] .ball {
+  min-width: 40px;
+  height: 40px;
+  font-size: 16px;
+  border: 2px solid #000;
+}
+:root[data-sun] .small,
+:root[data-sun] .tiny {
+  font-size: 15px;
+}
+:root[data-sun] .sheet {
+  background: #fff;
+}
+:root[data-sun] .list-item {
+  min-height: 60px;
+  font-size: 18px;
+}
+:root[data-sun] .appbar {
+  background: #000;
+}

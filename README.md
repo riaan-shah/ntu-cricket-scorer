@@ -25,6 +25,10 @@ Screen** so it works offline at the cage.
 3. **Toss & overs**: coin flip, the winner, bat or bowl, and **how many overs** (it defaults to last match's).
    Overs can be changed any time during the match: tap the overs in the score header, use **More → Change overs**,
    or use **＋ Add overs** at the innings break or the end of the match.
+   **Rain rule**: if overs change *after* the first innings is complete (at the break or mid-chase), the target is
+   revised from the batting resources the chasing side gained or lost. Resources depend on overs left and wickets in hand,
+   in the spirit of Duckworth–Lewis (Z0(w)·(1−e^(−b·u))) but with simple constants, not the official DLS tables. The new
+   target is previewed before you confirm, and results say e.g. *won by 3 runs (revised target 41)*.
 4. **Openers**: striker, non-striker and opening bowler. You can add a player to either team right here.
 5. **Scoring pad**: `0 1 2 3 4 6 · WD · NB · BYE · LB · OUT · OUT OF CAGE · Undo · More`
    - Wides and no-balls ask for the extra runs taken; for no-balls you also pick bat, bye or leg bye. A free hit follows a no-ball.
@@ -57,6 +61,13 @@ Screen** so it works offline at the cage.
 
 ## Stats
 
+- **Match Analysis tab** (for viewers): **Manhattan** (runs per over, both innings, wickets marked), **Worm** (running
+  totals), **win probability** during a chase (built on the Pressure Index, also shown live on the Summary tab), and
+  **phase splits** (early / middle / death: runs, wickets, run rate). Phases scale with the format, roughly the first and last 30% of overs.
+- **Player phase splits** (career SR and economy per phase) and **favourite partners** on profiles; **best pairs**
+  (most runs together) on Records.
+- **☀️ Sun mode** (scoring screen header, or Settings → Display): large text, bigger buttons, maximum contrast.
+  Remembered per phone.
 - **Club records** (Home → Records): highest and lowest totals, highest scores, best figures, biggest wins (runs and
   chasing), best partnerships, most sixes in an innings, and the out-of-cage hall of shame (career and single innings).
 - **Compare** (Home → Compare, or a profile's *Compare →*): two players side by side with the better figure highlighted,

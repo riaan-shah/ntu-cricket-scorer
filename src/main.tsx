@@ -5,6 +5,9 @@ import { toast } from './components/ui';
 import { AuthProvider } from './data/auth';
 import { onCloudWriteError } from './data/cloud';
 import './styles.css';
+import { initSunMode } from './sunMode';
+
+initSunMode();
 
 // A live link (/m/<id>) that reached the app itself (e.g. an older cached install): jump to the match.
 const liveLink = location.pathname.match(/\/m\/([A-Za-z0-9_-]+)/);

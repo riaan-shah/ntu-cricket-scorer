@@ -576,7 +576,7 @@ export function computeMatch(match: Match): MatchState {
   const innings: InningsState[] = [];
   match.innings.forEach((_, i) => {
     // Innings come in pairs (main match, then any super overs): the second of each pair chases the first.
-    const target = i % 2 === 1 ? innings[i - 1].runs + 1 : null;
+    const target = i % 2 === 1 ? chaseTarget(match, i, innings[i - 1].runs) : null;
     innings.push(replayInnings(match, i, target));
   });
   const current = innings[innings.length - 1] ?? null;
@@ -607,23 +607,72 @@ export function computeResult(match: Match, innings: InningsState[]): MatchResul
 function pairResult(match: Match, a: InningsState, b: InningsState): MatchResult {
   const nameA = match.teams[a.battingTeam].name;
   const nameB = match.teams[b.battingTeam].name;
-  if (b.runs > a.runs) {
+  // With a rain-revised target, team 1's "score" for the result is target − 1.
+  const revised = b.target !== null && b.target !== a.runs + 1;
+  const par = b.target !== null ? b.target - 1 : a.runs;
+  const note = revised ? ` (revised target ${b.target})` : '';
+  if (b.runs > par) {
     const ballsLeft = Math.max(0, b.maxBalls - b.legalBalls);
     const w = b.wicketsInHand;
     const ballsText = `${ballsLeft} ball${ballsLeft === 1 ? '' : 's'} left`;
     return {
       winner: b.battingTeam,
       text:
-        w > 0
+        (w > 0
           ? `${nameB} won by ${w} wicket${w === 1 ? '' : 's'} (${ballsText})`
-          : `${nameB} won (${ballsText})`,
+          : `${nameB} won (${ballsText})`) + note,
     };
   }
-  if (a.runs > b.runs) {
-    const d = a.runs - b.runs;
-    return { winner: a.battingTeam, text: `${nameA} won by ${d} run${d === 1 ? '' : 's'}` };
+  if (par > b.runs) {
+    const d = par - b.runs;
+    return { winner: a.battingTeam, text: `${nameA} won by ${d} run${d === 1 ? '' : 's'}` + note };
   }
-  return { winner: null, text: 'Match tied' };
+  return { winner: null, text: 'Match tied' + note };
+}
+
+// ---------- Rain rule (lightweight, DLS-style) ----------
+/*
+ * Batting resources left with allsLeft and wicketsLost (out of maxWickets), following the shape of the
+ * Duckworth–Lewis resource function Z0(w)·(1 − e^(−b·u)): fewer overs or fewer wickets = fewer resources.
+ * Constants are simple and documented, NOT the official DLS tables. In short cage games it is close to
+ * proportional, slightly favouring the side that loses overs (as a shortened innings can be batted more aggressively).
+ */
+const RAIN_B = 0.04;
+export function resources(ballsLeft: number, wicketsLost: number, maxWickets: number, bpo: number): number {
+  const u = Math.max(0, ballsLeft) / bpo;
+  const f = Math.pow(Math.max(0, maxWickets - wicketsLost) / Math.max(1, maxWickets), 0.8);
+  if (f <= 0) return 0;
+  return f * (1 - Math.exp((-RAIN_B * u) / f));
+}
+
+/** Target for innings i (1 = main chase, 3/5 = super overs). Revised if overs changed after the first innings. */
+export function chaseTarget(match: Match, i: number, prevRuns: number): number {
+  if (i !== 1 || !match.rain) return prevRuns + 1;
+  const bpo = match.rules.ballsPerOver;
+  const r1 = resources(match.rain.overs1 * bpo, 0, 10, bpo);
+  if (r1 <= 0) return prevRuns + 1;
+  return Math.floor((prevRuns * match.rain.r2) / r1) + 1;
+}
+
+/**
+ * Applies an overs change to the rain rule. Only matters once the first innings is complete: before that both sides
+ * simply get the new overs. Returns the match with ules.overs and (if needed) ain updated.
+ */
+export function changeOvers(match: Match, newOvers: number): Match {
+  const st = computeMatch(match);
+  const first = st.innings[0];
+  const next: Match = { ...match, rules: { ...match.rules, overs: newOvers } };
+  if (!first?.complete || st.innings.length > 2 || newOvers === match.rules.overs) return next;
+  const bpo = match.rules.ballsPerOver;
+  const chase = st.innings[1];
+  const used = chase?.legalBalls ?? 0;
+  const wkts = chase?.wickets ?? 0;
+  const maxW = 10; // resources only need the wicket *share*; scaled below
+  const share = chase ? Math.round((wkts / Math.max(1, chase.battingTurns - 1)) * maxW) : 0;
+  const rain = match.rain ?? { overs1: match.rules.overs, r2: resources(match.rules.overs * bpo, 0, maxW, bpo) };
+  const lost =
+    resources(match.rules.overs * bpo - used, share, maxW, bpo) - resources(newOvers * bpo - used, share, maxW, bpo);
+  return { ...next, rain: { overs1: rain.overs1, r2: Math.max(0, rain.r2 - lost) } };
 }
 
 /** Starts a super over after a tie: the side that batted second in the tied pair bats first (ICC playing conditions). */

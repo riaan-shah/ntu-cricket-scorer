@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { BallEvent, Match, ScoreEvent } from '../types';
 import { DEFAULT_RULES } from './engine';
 import { computeMvp } from './impact';
-import { headToHead, shotZones } from './insights';
+import { headToHead, inningsPhases, pairRecords, phaseOf, phaseRangeLabel, shotZones } from './insights';
+import { winProbability } from './impact';
+import { computeMatch } from './engine';
 import { computeRecords } from './records';
 import { decodeFields, previewHtml, previewText, type FsValue } from '../share/livePreview';
 
@@ -141,5 +143,41 @@ describe('live link preview', () => {
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('https://x.test/#/match/m1');
     expect(html).toContain('og:title');
+  });
+});
+
+describe('win probability', () => {
+  const s = (runs: number, wickets: number, legalBalls: number) => ({
+    runs, wickets, legalBalls, maxBalls: 36, maxWickets: 5, target: 61, par: 1.3,
+  });
+  it('is about even at the start of a par chase and moves with the game', () => {
+    expect(winProbability(s(0, 0, 0))).toBeGreaterThan(35);
+    expect(winProbability(s(0, 0, 0))).toBeLessThan(65);
+    expect(winProbability(s(50, 0, 24))).toBeGreaterThan(winProbability(s(30, 0, 24)));
+    expect(winProbability(s(30, 4, 24))).toBeLessThan(winProbability(s(30, 0, 24)));
+  });
+  it('is certain at the end', () => {
+    expect(winProbability(s(61, 2, 30))).toBe(100);
+    expect(winProbability(s(50, 2, 36))).toBe(0);
+    expect(winProbability(s(60, 2, 36))).toBe(50); // tied
+  });
+});
+
+describe('phases and partnerships', () => {
+  it('splits overs into early / middle / death by format', () => {
+    expect([0, 6, 12, 18, 24, 30].map((b) => phaseOf(b, 36, 6))).toEqual(['early', 'early', 'middle', 'middle', 'death', 'death']);
+    expect([0, 6].map((b) => phaseOf(b, 12, 6))).toEqual(['early', 'death']);
+    expect(phaseRangeLabel('middle', 2)).toBe('');
+    expect(phaseRangeLabel('early', 6)).toBe('ov 1–2');
+  });
+
+  it('adds up runs by phase and pairs across matches', () => {
+    const m = played();
+    const first = computeMatch(m).innings[0];
+    const ph = inningsPhases(first, 6);
+    expect(ph.early.runs).toBe(first.runs); // 1-over match: all early
+    const pairs = pairRecords([played('m1'), played('m2', '2026-10-02')]);
+    const a1a2 = pairs.find((p) => p.ids.join() === 'a1,a2')!;
+    expect(a1a2).toMatchObject({ runs: 24, innings: 2, best: 12 });
   });
 });

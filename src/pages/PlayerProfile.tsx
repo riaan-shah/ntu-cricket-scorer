@@ -16,7 +16,7 @@ import { impactGrade, pressureLabel } from '../engine/impact';
 import { useAuth } from '../data/auth';
 import { FormChart } from '../components/FormChart';
 import { ShotChart } from '../components/ShotChart';
-import { shotZones } from '../engine/insights';
+import { pairRecords, PHASE_LABELS, PHASES, playerPhases, shotZones } from '../engine/insights';
 import { battingForm, bowlingForm } from './Compare';
 import type { Player, PlayerRole } from '../types';
 
@@ -94,6 +94,8 @@ export default function PlayerProfile() {
   const matches = useMatches() ?? [];
   const stats = useMemo(() => computeCareerStats(matches), [matches]);
   const zones = useMemo(() => shotZones(matches, id ?? ''), [matches, id]);
+  const phases = useMemo(() => playerPhases(matches, id ?? ''), [matches, id]);
+  const partners = useMemo(() => pairRecords(matches).filter((p) => p.ids.includes(id ?? '')).slice(0, 3), [matches, id]);
   const [tab, setTab] = useState<'bat' | 'bowl' | 'field'>('bat');
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
@@ -274,6 +276,68 @@ export default function PlayerProfile() {
               </div>
             )}
           </>
+        )}
+
+        {PHASES.some((p) => phases.bat[p].balls > 0 || phases.bowl[p].balls > 0) && (
+          <div className="card">
+            <div className="card-head">
+              <h2>Phase splits</h2>
+              <span className="tiny muted">early · middle · death overs</span>
+            </div>
+            <table className="mini-table">
+              <thead>
+                <tr>
+                  <th>Phase</th>
+                  <th>Runs</th>
+                  <th>SR</th>
+                  <th>Wkts</th>
+                  <th>Econ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PHASES.map((p) => {
+                  const bt = phases.bat[p];
+                  const bw = phases.bowl[p];
+                  return (
+                    <tr key={p}>
+                      <td>{PHASE_LABELS[p]}</td>
+                      <td className="bold">{bt.balls ? bt.runs : '-'}</td>
+                      <td>{bt.balls ? ((bt.runs * 100) / bt.balls).toFixed(0) : '-'}</td>
+                      <td className="bold">{bw.balls ? bw.wickets : '-'}</td>
+                      <td>{bw.balls ? ((bw.runs * 6) / bw.balls).toFixed(1) : '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="tiny muted" style={{ padding: '6px 14px 10px' }}>
+              Phases scale with the format: about the first and last 30% of each innings' overs.
+            </div>
+          </div>
+        )}
+
+        {partners.length > 0 && (
+          <div className="card">
+            <div className="card-head">
+              <h2>Favourite partners</h2>
+            </div>
+            {partners.map((pr) => {
+              const other = pr.ids[0] === player.id ? pr.ids[1] : pr.ids[0];
+              return (
+                <Link key={other} to={`/players/${other}`} className="list-item">
+                  <Avatar name={nameOf(other)} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="bold">{nameOf(other)}</div>
+                    <div className="tiny muted">
+                      {pr.innings} stand{pr.innings === 1 ? '' : 's'} · best {pr.best}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 18, fontWeight: 800 }}>{pr.runs}</span>
+                  <span className="tiny muted">runs</span>
+                </Link>
+              );
+            })}
+          </div>
         )}
 
         {zones.tagged > 0 && (
