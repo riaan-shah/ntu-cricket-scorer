@@ -21,6 +21,7 @@ import {
   BowlerSheet,
   ExtrasSheet,
   MatchSettingsSheet,
+  OversSheet,
   RetireSheet,
   StartSheet,
   WicketSheet,
@@ -36,7 +37,8 @@ type SheetKind =
   | 'addPlayer'
   | 'settings'
   | 'changeBowler'
-  | 'customRuns';
+  | 'customRuns'
+  | 'overs';
 
 export default function Scoring() {
   const { id } = useParams();
@@ -172,7 +174,9 @@ export default function Scoring() {
         <div className="big">
           {cur.runs}/{cur.wickets}
           <small>
-            ({oversTextFull(cur.legalBalls, bpo)}/{rules.overs})
+            <button className="overs-link" onClick={() => setSheet('overs')} title="Change overs">
+              ({oversTextFull(cur.legalBalls, bpo)}/{rules.overs} ✎)
+            </button>
           </small>
         </div>
         <div className="meta">
@@ -202,8 +206,8 @@ export default function Scoring() {
       </div>
       {live && cur.freeHit && <div className="free-hit">FREE HIT</div>}
 
-      {state.phase === 'break' && <InningsBreak match={match} ctx={ctx} />}
-      {state.phase === 'result' && <MatchOver match={match} ctx={ctx} />}
+      {state.phase === 'break' && <InningsBreak match={match} ctx={ctx} onChangeOvers={() => setSheet('overs')} />}
+      {state.phase === 'result' && <MatchOver match={match} ctx={ctx} onChangeOvers={() => setSheet('overs')} />}
 
       {live && (
         <div className="page" style={{ paddingTop: 12 }}>
@@ -381,6 +385,7 @@ export default function Scoring() {
       {sheet === 'retire' && <RetireSheet ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet === 'addPlayer' && <AddPlayerSheet ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet === 'settings' && <MatchSettingsSheet ctx={ctx} onClose={() => setSheet(null)} />}
+      {sheet === 'overs' && <OversSheet ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet === 'changeBowler' && <BowlerSheet ctx={ctx} mode="change" onClose={() => setSheet(null)} />}
       {sheet === 'customRuns' && <CustomRunsSheet onRuns={(n) => runs(n)} onClose={() => setSheet(null)} />}
       {sheet === 'more' && (
@@ -393,7 +398,8 @@ export default function Scoring() {
                 ['🔁 Change bowler (mid-over)', 'changeBowler', canScore],
                 ['🩹 Retire batter', 'retire', canScore],
                 ['➕ Add player to a team', 'addPlayer', true],
-                ['⚙️ Match settings / increase overs', 'settings', true],
+                ['🏏 Change overs', 'overs', true],
+                ['⚙️ Match settings', 'settings', true],
                 ['🏁 End innings now', 'declare', live && cur.started],
                 ['📋 View full scorecard', 'scorecard', true],
                 ['🗑 Abandon match', 'abandon', true],
@@ -495,7 +501,7 @@ function RecentBalls({ ctx }: { ctx: ScoringCtx }) {
   );
 }
 
-function InningsBreak({ match, ctx }: { match: Match; ctx: ScoringCtx }) {
+function InningsBreak({ match, ctx, onChangeOvers }: { match: Match; ctx: ScoringCtx; onChangeOvers: () => void }) {
   const first = ctx.state.innings[0];
   const chasing = (1 - first.battingTeam) as TeamIdx;
   const bpo = match.rules.ballsPerOver;
@@ -521,14 +527,14 @@ function InningsBreak({ match, ctx }: { match: Match; ctx: ScoringCtx }) {
           <button className="btn" onClick={ctx.undo}>
             ↶ Undo last ball
           </button>
-          <AddOverButton ctx={ctx} />
+          <ChangeOversButton ctx={ctx} onClick={onChangeOvers} />
         </div>
       </div>
     </div>
   );
 }
 
-function MatchOver({ match, ctx }: { match: Match; ctx: ScoringCtx }) {
+function MatchOver({ match, ctx, onChangeOvers }: { match: Match; ctx: ScoringCtx; onChangeOvers: () => void }) {
   const nav = useNavigate();
   const mvp = useMemo(() => computeMvp(match, ctx.state), [match, ctx.state]);
   const [motm, setMotm] = useState<string | undefined>(mvp.heroes.potm);
@@ -559,20 +565,20 @@ function MatchOver({ match, ctx }: { match: Match; ctx: ScoringCtx }) {
         <button className="btn" onClick={ctx.undo}>
           ↶ Undo last ball
         </button>
-        <AddOverButton ctx={ctx} />
+        <ChangeOversButton ctx={ctx} onClick={onChangeOvers} />
       </div>
     </div>
   );
 }
-function AddOverButton({ ctx }: { ctx: ScoringCtx }) {
+/** Offered when an innings ended on overs: lets the scorer agree to play more (any number). */
+function ChangeOversButton({ ctx, onClick }: { ctx: ScoringCtx; onClick: () => void }) {
   if (ctx.cur.completeReason !== 'overs') return <Link className="btn" to={`/match/${ctx.match.id}`}>Scorecard</Link>;
   return (
-    <button className="btn" onClick={() => ctx.mutate((m) => ({ ...m, rules: { ...m.rules, overs: m.rules.overs + 1 } }))}>
-      + Add an over
+    <button className="btn" onClick={onClick}>
+      ＋ Add overs
     </button>
   );
 }
-
 /** Cloud mode: shows whether the latest balls have reached the club database. */
 function SyncChip({ pending }: { pending: boolean }) {
   const [online, setOnline] = useState(navigator.onLine);

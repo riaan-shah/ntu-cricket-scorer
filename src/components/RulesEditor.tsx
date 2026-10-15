@@ -18,14 +18,6 @@ export function RulesEditor({
         <div className="card-head">
           <h2>Format</h2>
         </div>
-        <StepperRow
-          label="Overs per innings"
-          hint="You can increase this mid-match"
-          value={rules.overs}
-          min={1}
-          max={50}
-          onChange={(v) => set('overs', v)}
-        />
         {!lockFormat && (
           <StepperRow
             label="Balls per over"

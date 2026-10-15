@@ -1493,4 +1493,66 @@ select.input {
   border-top: 1px solid var(--line);
   box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.12);
   z-index: 30;
+}.overs-picker {
+  display: grid;
+  gap: 12px;
+}
+.op-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+.op-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--chip);
+  font-size: 28px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.op-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.op-value {
+  display: grid;
+  justify-items: center;
+  min-width: 110px;
+}
+.op-value b {
+  font-size: 46px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--brand-2);
+}
+.op-value span {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.op-presets {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.op-presets .choice {
+  min-height: 40px;
+  padding: 0;
+}
+@media (max-width: 420px) {
+  .op-presets {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.overs-link {
+  border: 0;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  font: inherit;
+  border-radius: 8px;
+  padding: 0 6px;
+  cursor: pointer;
 }

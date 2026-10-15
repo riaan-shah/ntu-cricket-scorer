@@ -5,7 +5,8 @@ import { NewPlayerInline } from '../components/PlayerPick';
 import { useAuth } from '../data/auth';
 import { RulesEditor } from '../components/RulesEditor';
 import { AppBar, Avatar, Seg, toast } from '../components/ui';
-import { saveMatch, uid, usePlayers, useSettings } from '../db';
+import { saveMatch, uid, useMatches, usePlayers, useSettings } from '../db';
+import { OversPicker } from '../components/OversPicker';
 import type { ID, Match, MatchRules, TeamIdx } from '../types';
 
 type Side = 'A' | 'B' | 'both';
@@ -21,6 +22,8 @@ export default function NewMatch() {
   const [sides, setSides] = useState<Map<ID, Side>>(new Map());
   const [query, setQuery] = useState('');
   const [rules, setRules] = useState<MatchRules | null>(null);
+  const [overs, setOvers] = useState<number | null>(null);
+  const lastMatch = useMatches()?.[0];
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [venue, setVenue] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -33,6 +36,8 @@ export default function NewMatch() {
   }, [step]);
 
   const effRules = rules ?? settings.defaultRules;
+  // Default to whatever the club played last time.
+  const effOvers = overs ?? lastMatch?.rules.overs ?? settings.defaultRules.overs;
   const effVenue = venue ?? settings.defaultVenue;
 
   const teamA = [...sides].filter(([, s]) => s === 'A' || s === 'both').map(([id]) => id);
@@ -94,7 +99,7 @@ export default function NewMatch() {
         { name: nameA.trim() || 'Team A', playerIds: teamA },
         { name: nameB.trim() || 'Team B', playerIds: teamB },
       ],
-      rules: effRules,
+      rules: { ...effRules, overs: effOvers },
       toss: { winner: tossWinner, decision },
       innings: [{ battingTeam, events: [] }],
       status: 'live',
@@ -106,7 +111,7 @@ export default function NewMatch() {
   return (
     <div>
       <AppBar
-        title={step === 1 ? 'New match · Teams' : step === 2 ? 'New match · Rules' : 'New match · Toss'}
+        title={step === 1 ? 'New match · Teams' : step === 2 ? 'New match · Rules' : 'New match · Toss & overs'}
         back={step === 1 ? '/' : () => setStep((s) => (s - 1) as 1 | 2)}
       />
 
@@ -231,7 +236,7 @@ export default function NewMatch() {
           </div>
           <RulesEditor rules={effRules} onChange={setRules} />
           <button className="btn primary big block" onClick={() => setStep(3)}>
-            Next: Toss →
+            Next: Toss & overs →
           </button>
         </div>
       )}
@@ -270,9 +275,14 @@ export default function NewMatch() {
               ]}
             />
           </div>
+          <div className="card card-pad stack">
+            <div className="section-title">How many overs?</div>
+            <OversPicker value={effOvers} onChange={setOvers} />
+            <div className="tiny muted center">You can add or remove overs any time during the match.</div>
+          </div>
           <div className="card card-pad small">
             <b>{tossWinner === 0 ? nameA : nameB}</b> won the toss and elected to <b>{decision}</b>.{' '}
-            {effRules.overs} overs a side · {teamA.length} v {teamB.length} players
+            {effOvers} over{effOvers === 1 ? '' : 's'} a side · {teamA.length} v {teamB.length} players
           </div>
           <button className="btn primary big block" onClick={start}>
             Start match 🏏

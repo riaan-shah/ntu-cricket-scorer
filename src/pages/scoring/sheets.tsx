@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { NewPlayerInline, PlayerPickList, type PickOption } from '../../components/PlayerPick';
+import { OversPicker } from '../../components/OversPicker';
 import { RulesEditor } from '../../components/RulesEditor';
 import { Seg, Sheet, ToggleRow, toast } from '../../components/ui';
 import {
@@ -528,7 +529,6 @@ export function MatchSettingsSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose:
   const { match } = ctx;
   const [rules, setRules] = useState(match.rules);
   const [names, setNames] = useState([match.teams[0].name, match.teams[1].name]);
-  const minOvers = Math.ceil(ctx.cur.legalBalls / match.rules.ballsPerOver);
   return (
     <Sheet open title="Match settings" onClose={onClose}>
       <div className="grid-2">
@@ -544,17 +544,14 @@ export function MatchSettingsSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose:
         ))}
       </div>
       <RulesEditor rules={rules} onChange={setRules} lockFormat />
-      {rules.overs < minOvers && (
-        <div className="small" style={{ color: 'var(--accent)' }}>
-          {minOvers} overs have already been bowled this innings — reducing below that will end it.
-        </div>
-      )}
+
       <button
         className="btn primary big block"
         onClick={() => {
           ctx.mutate((m) => ({
             ...m,
-            rules,
+            // Overs have their own sheet; keep whatever they are now.
+            rules: { ...rules, overs: m.rules.overs },
             teams: m.teams.map((t, i) => ({ ...t, name: names[i].trim() || t.name })) as Match['teams'],
           }));
           toast('Match settings saved');
@@ -562,6 +559,63 @@ export function MatchSettingsSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose:
         }}
       >
         Save
+      </button>
+    </Sheet>
+  );
+}
+
+// ---------- Change overs ----------
+
+export function OversSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose: () => void }) {
+  const { match, state, cur } = ctx;
+  const bpo = match.rules.ballsPerOver;
+  const current = match.rules.overs;
+  const [overs, setOvers] = useState(current);
+  // Overs already bowled in the current innings (or the longest innings so far).
+  const bowled = Math.max(...state.innings.map((i) => i.legalBalls), 0);
+  const bowledOvers = Math.ceil(bowled / bpo);
+  const diff = overs - current;
+  const target = cur.target;
+  return (
+    <Sheet open title="Change overs" onClose={onClose}>
+      <div className="card card-pad stack">
+        <OversPicker value={overs} onChange={setOvers} />
+        <div className="row wrap" style={{ justifyContent: 'center' }}>
+          {[-1, 1, 2, 5].map((d) => (
+            <button key={d} type="button" className="btn sm" disabled={overs + d < 1} onClick={() => setOvers(overs + d)}>
+              {d > 0 ? `+${d}` : d} over{Math.abs(d) === 1 ? '' : 's'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="small muted center">
+        Currently {current} over{current === 1 ? '' : 's'} a side
+        {diff !== 0 && (
+          <>
+            {' '}
+            → <b style={{ color: 'var(--text)' }}>{overs}</b> ({diff > 0 ? `+${diff}` : diff})
+          </>
+        )}
+        . Applies to both innings.
+      </div>
+      {overs < bowledOvers && (
+        <div className="small" style={{ color: 'var(--accent)' }}>
+          {bowledOvers} over{bowledOvers === 1 ? ' has' : 's have'} already been bowled — reducing below that ends the innings.
+        </div>
+      )}
+      {target !== null && diff !== 0 && (
+        <div className="small muted">The target stays at {target}; only the balls available change.</div>
+      )}
+      <button
+        className="btn primary big block"
+        disabled={diff === 0}
+        onClick={() => {
+          ctx.mutate((m) => ({ ...m, rules: { ...m.rules, overs } }));
+          toast(`Now ${overs} over${overs === 1 ? '' : 's'} a side`);
+          onClose();
+        }}
+      >
+        {diff === 0 ? 'No change' : `Set to ${overs} overs`}
       </button>
     </Sheet>
   );

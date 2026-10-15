@@ -17,7 +17,9 @@ import type { ClubSettings, Match, Player } from '../types';
 import type { Backend } from './backend';
 import { firebaseConfig } from './firebaseConfig';
 
-export const cloudEnabled = firebaseConfig !== null;
+/** 
+pm run dev:offline forces on-device storage (for testing without touching the club database). */
+export const cloudEnabled = firebaseConfig !== null && import.meta.env.VITE_LOCAL_ONLY !== '1';
 
 let app: FirebaseApp | null = null;
 let fs: Firestore | null = null;

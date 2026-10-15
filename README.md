@@ -21,18 +21,20 @@ Screen** so it works offline at the cage.
 1. **New match → Teams**: name the two sides and tap **A / B / Both** for each player. **Both** means the player plays for both teams.
    Add new players inline. **Shuffle teams** randomly splits the players you picked. Uneven sides are fine; the app tells you how
    many extra batting turns the short side gets.
-2. **Rules**: overs, balls per over, bowler quota, extras, plus club rules (see below). Defaults come from Settings.
-3. **Toss**: coin flip, the winner, and bat or bowl.
+2. **Rules**: balls per over, bowler quota, extras, plus club rules (see below). Defaults come from Settings.
+3. **Toss & overs**: coin flip, the winner, bat or bowl, and **how many overs** (it defaults to last match's).
+   Overs can be changed any time during the match: tap the overs in the score header, use **More → Change overs**,
+   or use **＋ Add overs** at the innings break or the end of the match.
 4. **Openers**: striker, non-striker and opening bowler. You can add a player to either team right here.
 5. **Scoring pad**: `0 1 2 3 4 6 · WD · NB · BYE · LB · OUT · OUT OF CAGE · Undo · More`
    - Wides and no-balls ask for the extra runs taken; for no-balls you also pick bat, bye or leg bye. A free hit follows a no-ball.
    - **OUT**: bowled, caught (pick the fielder; picking the bowler gives c&b), LBW, run out (who's out, runs completed,
      legal/wide/no-ball/bye), stumped, hit wicket, out of cage, obstructing, hit twice. Free-hit restrictions are enforced.
    - **More**: 5/7/custom runs, swap strike, mid-over bowler change, retire hurt/out, add a player to a team,
-     match settings (**increase overs**), end innings, abandon.
+     **change overs**, match settings, end innings, abandon.
    - Strike rotates automatically on odd runs and at the end of each over. Consecutive overs and bowler quotas are blocked,
      with an "Allow anyway" override.
-6. **Innings break**: shows the target and lets you **+ Add an over** if you agree to extend.
+6. **Innings break**: shows the target and lets you **＋ Add overs** (any number) if you agree to extend.
 7. **Match over**: the result is worked out automatically ("won by N runs" or "won by N wickets (B balls left)"). The Heroes
    of the Match (Player of the Match, Best Batter, Best Bowler, Fighter) are picked by MVP 2.0 (see below), and you can
    change Player of the Match. Then **Finish & save**.
