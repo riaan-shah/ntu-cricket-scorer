@@ -32,7 +32,25 @@ async function setStatus(status) {
   await db.doc('config/backupStatus').set({ lastRunAt: Date.now(), ...status });
 }
 
+/** Push, and if the repository moved on meanwhile (another run, a re-run, an edit), rebase onto it and retry. */
+function pushWithRetry() {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      sh('git push origin HEAD:main');
+      return;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      console.log(`Push rejected (attempt ${attempt}); pulling the latest and retrying…`);
+      sh('git pull --rebase origin main');
+    }
+  }
+}
+
 async function main() {
+  // ---- 0. Start from the latest version of this repository (a re-run otherwise uses an old commit) ----
+  sh('git fetch origin main');
+  sh('git checkout -B main origin/main');
+
   // ---- 1. Export ----
   const [players, matches] = await Promise.all([all('players'), all('matches')]);
   const settings = (await db.doc('config/club').get()).data();
@@ -63,7 +81,7 @@ async function main() {
     sh('git config user.email "backup@users.noreply.github.com"');
     sh(`git add ${OUT}`);
     sh(`git commit -m "Backup ${date}: ${players.length} players, ${matches.length} matches (${binned} in bin)"`);
-    sh('git push');
+    pushWithRetry();
     commit = sh('git rev-parse --short HEAD');
     console.log(`Committed ${commit}.`);
   }
