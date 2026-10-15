@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppBar, Avatar, Sheet, toast } from '../components/ui';
 import { createPlayer, useMatches, usePlayers } from '../db';
+import { useAuth } from '../data/auth';
 import { batAverage, batStrikeRate, bowlEconomy, computeCareerStats } from '../engine/stats';
 import { downloadText, toCsv } from '../export';
 import type { Player } from '../types';
@@ -13,6 +14,7 @@ export default function Players() {
   const stats = useMemo(() => computeCareerStats(matches), [matches]);
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
+  const { canScore } = useAuth();
   const list = players.filter((p) => p.name.toLowerCase().includes(q.trim().toLowerCase()));
 
   const exportCsv = () => {
@@ -52,9 +54,11 @@ export default function Players() {
       <div className="page">
         <div className="row">
           <input className="input" placeholder="Search players…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button className="btn primary" onClick={() => setAdding(true)}>
-            ＋ Add
-          </button>
+          {canScore && (
+            <button className="btn primary" onClick={() => setAdding(true)}>
+              ＋ Add
+            </button>
+          )}
         </div>
         <div className="card">
           {list.length === 0 && <div className="empty">No players yet. Add your club members!</div>}

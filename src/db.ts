@@ -1,30 +1,12 @@
-import Dexie, { type Table } from 'dexie';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { Backend, MatchMeta } from './data/backend';
+import { cloudBackend, cloudEnabled } from './data/cloud';
+import { localBackend } from './data/local';
 import { DEFAULT_RULES } from './engine/engine';
 import type { ClubSettings, ID, Match, Player } from './types';
 
-interface SettingRow {
-  key: string;
-  value: ClubSettings;
-}
-
-class CricketDB extends Dexie {
-  players!: Table<Player, string>;
-  matches!: Table<Match, string>;
-  settings!: Table<SettingRow, string>;
-
-  constructor() {
-    super('ntu-cricket-scorer');
-    this.version(1).stores({
-      players: 'id, name',
-      matches: 'id, status, date',
-      settings: 'key',
-    });
-  }
-}
-
-export const db = new CricketDB();
+/** Cloud (shared club database) when Firebase is configured, otherwise this device only. */
+export const backend: Backend = cloudEnabled ? cloudBackend : localBackend;
 
 /** crypto.randomUUID needs a secure context, which a phone on http://<lan-ip> isn't. */
 export function uid(): string {
@@ -46,90 +28,88 @@ export const DEFAULT_SETTINGS: ClubSettings = {
 export async function createPlayer(name: string, extra: Partial<Player> = {}): Promise<Player> {
   const now = Date.now();
   const p: Player = { ...extra, id: uid(), name: name.trim(), createdAt: now, updatedAt: now };
-  await db.players.put(p);
+  await backend.putPlayer(p);
   return p;
 }
 
 export async function savePlayer(p: Player) {
-  await db.players.put({ ...p, updatedAt: Date.now() });
+  await backend.putPlayer({ ...p, updatedAt: Date.now() });
 }
 
 export async function playerMatchCount(id: ID): Promise<number> {
-  const all = await db.matches.toArray();
+  const all = await backend.getAllMatches();
   return all.filter((m) => m.teams.some((t) => t.playerIds.includes(id))).length;
 }
 
 export async function deletePlayer(id: ID) {
-  await db.players.delete(id);
+  await backend.deletePlayer(id);
 }
 
-/** Rewrites every reference to `fromId` as `intoId`, then removes `fromId`. */
-export async function mergePlayers(fromId: ID, intoId: ID) {
+/** Rewrites every reference to `fromId` in a match as `intoId`. */
+function remapPlayer(m: Match, fromId: ID, intoId: ID): Match {
   const swap = (id: ID) => (id === fromId ? intoId : id);
   const swapOpt = (id: ID | undefined) => (id === undefined ? id : swap(id));
-  await db.transaction('rw', db.players, db.matches, async () => {
-    const matches = await db.matches.toArray();
-    for (const m of matches) {
-      const json = JSON.stringify(m);
-      if (!json.includes(fromId)) continue;
-      const next: Match = {
-        ...m,
-        updatedAt: Date.now(),
-        motmId: swapOpt(m.motmId),
-        teams: m.teams.map((t) => ({
-          ...t,
-          playerIds: [...new Set(t.playerIds.map(swap))],
-          captainId: swapOpt(t.captainId),
-          keeperId: swapOpt(t.keeperId),
-        })) as Match['teams'],
-        innings: m.innings.map((inn) => ({
-          ...inn,
-          events: inn.events.map((ev) => {
-            switch (ev.kind) {
-              case 'start':
-                return { ...ev, strikerId: swap(ev.strikerId), nonStrikerId: ev.nonStrikerId && swap(ev.nonStrikerId), bowlerId: swap(ev.bowlerId) };
-              case 'ball':
-                return {
-                  ...ev,
-                  strikerId: swap(ev.strikerId),
-                  nonStrikerId: ev.nonStrikerId && swap(ev.nonStrikerId),
-                  bowlerId: swap(ev.bowlerId),
-                  wicket: ev.wicket && {
-                    ...ev.wicket,
-                    playerOutId: swap(ev.wicket.playerOutId),
-                    fielderId: swapOpt(ev.wicket.fielderId),
-                  },
-                };
-              case 'newBatter':
-              case 'newBowler':
-              case 'retire':
-                return { ...ev, playerId: swap(ev.playerId) };
-              default:
-                return ev;
-            }
-          }),
-        })),
-      };
-      await db.matches.put(next);
-    }
-    await db.players.delete(fromId);
-  });
+  return {
+    ...m,
+    updatedAt: Date.now(),
+    motmId: swapOpt(m.motmId),
+    teams: m.teams.map((t) => ({
+      ...t,
+      playerIds: [...new Set(t.playerIds.map(swap))],
+      captainId: swapOpt(t.captainId),
+      keeperId: swapOpt(t.keeperId),
+    })) as Match['teams'],
+    innings: m.innings.map((inn) => ({
+      ...inn,
+      events: inn.events.map((ev) => {
+        switch (ev.kind) {
+          case 'start':
+            return { ...ev, strikerId: swap(ev.strikerId), nonStrikerId: ev.nonStrikerId && swap(ev.nonStrikerId), bowlerId: swap(ev.bowlerId) };
+          case 'ball':
+            return {
+              ...ev,
+              strikerId: swap(ev.strikerId),
+              nonStrikerId: ev.nonStrikerId && swap(ev.nonStrikerId),
+              bowlerId: swap(ev.bowlerId),
+              wicket: ev.wicket && {
+                ...ev.wicket,
+                playerOutId: swap(ev.wicket.playerOutId),
+                fielderId: swapOpt(ev.wicket.fielderId),
+              },
+            };
+          case 'newBatter':
+          case 'newBowler':
+          case 'retire':
+            return { ...ev, playerId: swap(ev.playerId) };
+          default:
+            return ev;
+        }
+      }),
+    })),
+  };
+}
+
+/** Moves all of `fromId`'s matches and stats to `intoId`, then removes `fromId`. */
+export async function mergePlayers(fromId: ID, intoId: ID) {
+  const matches = await backend.getAllMatches();
+  const changed = matches.filter((m) => JSON.stringify(m).includes(fromId)).map((m) => remapPlayer(m, fromId, intoId));
+  await backend.bulkPut([], changed, [fromId]);
 }
 
 // ---------- Matches ----------
 
 export async function saveMatch(m: Match) {
-  await db.matches.put({ ...m, updatedAt: Date.now() });
+  await backend.putMatch({ ...m, updatedAt: Date.now() });
 }
 
 export async function deleteMatch(id: ID) {
-  await db.matches.delete(id);
+  await backend.deleteMatch(id);
 }
 
 // ---------- Settings ----------
 
 export async function saveSettings(s: ClubSettings) {
-  await db.settings.put({ key: 'club', value: s });
+  await backend.putSettings(s);
 }
 
 // ---------- Backup ----------
@@ -143,50 +123,44 @@ export interface Backup {
   settings?: ClubSettings;
 }
 
-export async function exportBackup(): Promise<Backup> {
+async function exportFrom(source: Backend): Promise<Backup> {
   const [players, matches, settings] = await Promise.all([
-    db.players.toArray(),
-    db.matches.toArray(),
-    db.settings.get('club'),
+    source.getAllPlayers(),
+    source.getAllMatches(),
+    source.getSettings(),
   ]);
-  return {
-    app: 'ntu-cricket-scorer',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    players,
-    matches,
-    settings: settings?.value,
-  };
+  return { app: 'ntu-cricket-scorer', version: 1, exportedAt: new Date().toISOString(), players, matches, settings };
 }
 
-/** Merges a backup into this device: newer `updatedAt` wins, nothing is deleted. */
+export const exportBackup = () => exportFrom(backend);
+
+/** Merges a backup into the active store: newer `updatedAt` wins, nothing is deleted. */
 export async function importBackup(data: Backup) {
   if (data?.app !== 'ntu-cricket-scorer') throw new Error('This file is not an NTU Cricket Scorer backup.');
-  let players = 0;
-  let matches = 0;
-  await db.transaction('rw', db.players, db.matches, async () => {
-    for (const p of data.players ?? []) {
-      const cur = await db.players.get(p.id);
-      if (!cur || (p.updatedAt ?? 0) > (cur.updatedAt ?? 0)) {
-        await db.players.put(p);
-        players++;
-      }
-    }
-    for (const m of data.matches ?? []) {
-      const cur = await db.matches.get(m.id);
-      if (!cur || (m.updatedAt ?? 0) > (cur.updatedAt ?? 0)) {
-        await db.matches.put(m);
-        matches++;
-      }
-    }
-  });
-  return { players, matches };
+  const [curPlayers, curMatches] = await Promise.all([backend.getAllPlayers(), backend.getAllMatches()]);
+  const pTime = new Map(curPlayers.map((p) => [p.id, p.updatedAt ?? 0]));
+  const mTime = new Map(curMatches.map((m) => [m.id, m.updatedAt ?? 0]));
+  const players = (data.players ?? []).filter((p) => !pTime.has(p.id) || (p.updatedAt ?? 0) > pTime.get(p.id)!);
+  const matches = (data.matches ?? []).filter((m) => !mTime.has(m.id) || (m.updatedAt ?? 0) > mTime.get(m.id)!);
+  await backend.bulkPut(players, matches);
+  return { players: players.length, matches: matches.length };
+}
+
+/** Cloud mode: copies whatever this device stored locally (before sync was turned on) into the club database. */
+export async function uploadLocalData() {
+  return importBackup(await exportFrom(localBackend));
 }
 
 // ---------- Hooks ----------
 
+function useSubscription<T>(subscribe: (cb: (v: T) => void) => () => void, deps: unknown[], initial: T): T {
+  const [value, setValue] = useState<T>(initial);
+  useEffect(() => subscribe(setValue), deps);
+  return value;
+}
+
 export function usePlayers(): Player[] {
-  return useLiveQuery(() => db.players.orderBy('name').toArray(), [], []);
+  return useSubscription(backend.subscribePlayers, [], [] as Player[]);
 }
 
 export function usePlayerNames() {
@@ -199,22 +173,39 @@ export function usePlayerNames() {
 }
 
 export function useMatches(): Match[] | undefined {
-  return useLiveQuery(() => db.matches.toArray().then((ms) => ms.sort(sortMatches)), []);
+  const all = useSubscription<Match[] | undefined>(backend.subscribeMatches, [], undefined);
+  return useMemo(() => all && [...all].sort(sortMatches), [all]);
 }
 
+/** `undefined` while loading, `null` if the match doesn't exist. */
 export function useMatch(id: ID | undefined): Match | null | undefined {
-  return useLiveQuery(async () => (id ? (await db.matches.get(id)) ?? null : null), [id]);
+  return useMatchWithMeta(id).match;
+}
+
+export function useMatchWithMeta(id: ID | undefined): { match: Match | null | undefined; meta: MatchMeta | null } {
+  const [state, setState] = useState<{ match: Match | null | undefined; meta: MatchMeta | null }>({
+    match: undefined,
+    meta: null,
+  });
+  useEffect(() => {
+    if (!id) {
+      setState({ match: null, meta: null });
+      return;
+    }
+    return backend.subscribeMatch(id, (match, meta) => setState({ match, meta }));
+  }, [id]);
+  return state;
 }
 
 export function useSettings(): ClubSettings {
-  const row = useLiveQuery(() => db.settings.get('club'), []);
+  const saved = useSubscription<Partial<ClubSettings> | undefined>(backend.subscribeSettings, [], undefined);
   return useMemo(
     () => ({
       ...DEFAULT_SETTINGS,
-      ...row?.value,
-      defaultRules: { ...DEFAULT_RULES, ...row?.value?.defaultRules },
+      ...saved,
+      defaultRules: { ...DEFAULT_RULES, ...saved?.defaultRules },
     }),
-    [row],
+    [saved],
   );
 }
 

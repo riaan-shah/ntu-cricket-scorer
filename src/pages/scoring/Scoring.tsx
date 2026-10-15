@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AppBar, BallChip, Sheet, toast } from '../../components/ui';
-import { saveMatch, useMatch, usePlayerNames } from '../../db';
+import { saveMatch, useMatchWithMeta, usePlayerNames } from '../../db';
+import { useAuth } from '../../data/auth';
 import {
   computeMatch,
   economy,
@@ -40,7 +41,8 @@ type SheetKind =
 export default function Scoring() {
   const { id } = useParams();
   const nav = useNavigate();
-  const stored = useMatch(id);
+  const { match: stored, meta } = useMatchWithMeta(id);
+  const auth = useAuth();
   const { players, nameOf } = usePlayerNames();
   const [match, setMatch] = useState<Match | null>(null);
   const matchRef = useRef<Match | null>(null);
@@ -69,8 +71,8 @@ export default function Scoring() {
       </div>
     );
   }
-  if (!match || !state) return null;
-  if (match.status !== 'live') return <Navigate to={`/match/${match.id}`} replace />;
+  if (!match || !state || !auth.ready) return null;
+  if (match.status !== 'live' || !auth.canScore) return <Navigate to={`/match/${match.id}`} replace />;
 
   const mutate = (fn: (m: Match) => Match) => {
     const next = fn(matchRef.current!);
@@ -151,6 +153,7 @@ export default function Scoring() {
         back="/"
         right={
           <>
+            {meta && <SyncChip pending={meta.pendingWrites} />}
             <Link className="icon-btn" to={`/match/${match.id}`} title="Scorecard">
               📋
             </Link>
@@ -567,5 +570,31 @@ function AddOverButton({ ctx }: { ctx: ScoringCtx }) {
     <button className="btn" onClick={() => ctx.mutate((m) => ({ ...m, rules: { ...m.rules, overs: m.rules.overs + 1 } }))}>
       + Add an over
     </button>
+  );
+}
+
+/** Cloud mode: shows whether the latest balls have reached the club database. */
+function SyncChip({ pending }: { pending: boolean }) {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
+    };
+  }, []);
+  const label = !pending ? '☁ Synced' : online ? '⏳ Syncing' : '📴 Saved on phone';
+  const hint = !pending
+    ? 'Every ball is saved to the club database'
+    : online
+      ? 'Uploading the latest balls'
+      : 'No signal — balls are saved on this phone and will upload automatically';
+  return (
+    <span className="sync-chip" title={hint}>
+      {label}
+    </span>
   );
 }

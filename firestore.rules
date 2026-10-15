@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// NTU Cricket Scorer — paste into Firebase console → Firestore Database → Rules → Publish.
+//  - Anyone can read players, matches and club settings (public live scores).
+//  - Only emails on the private access list (config/access) can write.
+//  - The very first signed-in user can claim the club as admin while no access list exists.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function email() {
+      return request.auth.token.email.lower();
+    }
+    function accessPath() {
+      return /databases/$(database)/documents/config/access;
+    }
+    function isAdmin() {
+      return signedIn() && exists(accessPath()) && email() in get(accessPath()).data.admins;
+    }
+    function isScorer() {
+      return signedIn() && exists(accessPath()) &&
+        (email() in get(accessPath()).data.scorers || email() in get(accessPath()).data.admins);
+    }
+
+    match /players/{id} {
+      allow read: if true;
+      allow create, update, delete: if isScorer();
+    }
+
+    match /matches/{id} {
+      allow read: if true;
+      allow create, update, delete: if isScorer();
+    }
+
+    match /config/club {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /config/access {
+      // Scorers can see the list; anyone can see that it doesn't exist yet (so the first admin can claim the club).
+      allow read: if resource == null || isScorer();
+      allow create: if signedIn() &&
+        request.resource.data.admins == [email()] && request.resource.data.scorers == [];
+      // Admins manage the list but can't remove themselves (prevents locking the club out).
+      allow update: if isAdmin() && email() in request.resource.data.admins;
+      allow delete: if false;
+    }
+  }
+}

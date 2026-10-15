@@ -1,12 +1,15 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { MatchCard } from '../components/MatchCard';
+import { AccountButton } from '../components/Account';
 import { Avatar } from '../components/ui';
+import { useAuth } from '../data/auth';
 import { useMatches, usePlayerNames, useSettings } from '../db';
 import { computeCareerStats } from '../engine/stats';
 
 export default function Home() {
   const settings = useSettings();
+  const auth = useAuth();
   const matches = useMatches() ?? [];
   const { nameOf, players } = usePlayerNames();
   const live = matches.filter((m) => m.status === 'live');
@@ -31,16 +34,19 @@ export default function Home() {
           <span className="logo-badge">
             <img src="./logo-192.png" width={64} height={64} alt="NTU Cricket Club logo" />
           </span>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <h1>{settings.clubName}</h1>
             <p>Match scoring · player stats · scorecards</p>
           </div>
+          <AccountButton />
         </div>
       </div>
       <div className="page">
-        <Link to="/match/new" className="btn primary big block">
-          ＋ Start a new match
-        </Link>
+        {auth.canScore && (
+          <Link to="/match/new" className="btn primary big block">
+            ＋ Start a new match
+          </Link>
+        )}
 
         {live.length > 0 && (
           <div className="card">

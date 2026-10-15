@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ScorerOnly } from '../components/Account';
 import { NewPlayerInline } from '../components/PlayerPick';
+import { useAuth } from '../data/auth';
 import { RulesEditor } from '../components/RulesEditor';
 import { AppBar, Avatar, Seg, toast } from '../components/ui';
 import { saveMatch, uid, usePlayers, useSettings } from '../db';
@@ -12,6 +14,7 @@ export default function NewMatch() {
   const nav = useNavigate();
   const players = usePlayers();
   const settings = useSettings();
+  const auth = useAuth();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [nameA, setNameA] = useState('Team A');
   const [nameB, setNameB] = useState('Team B');
@@ -65,6 +68,17 @@ export default function NewMatch() {
   };
 
   const short = teamA.length - teamB.length;
+
+  if (!auth.canScore) {
+    return (
+      <div>
+        <AppBar title="New match" back="/" />
+        <div className="page">
+          <ScorerOnly what="start matches" />
+        </div>
+      </div>
+    );
+  }
 
   const start = async () => {
     const battingTeam: TeamIdx = decision === 'bat' ? tossWinner : ((1 - tossWinner) as TeamIdx);

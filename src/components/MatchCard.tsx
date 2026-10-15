@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { computeMatch, oversText } from '../engine/engine';
+import { useAuth } from '../data/auth';
 import type { Match } from '../types';
 
 export function MatchCard({ match, nameOf }: { match: Match; nameOf: (id: string | undefined) => string }) {
@@ -8,7 +9,8 @@ export function MatchCard({ match, nameOf }: { match: Match; nameOf: (id: string
   const bpo = match.rules.ballsPerOver;
   const scoreFor = (team: 0 | 1) => state.innings.find((i) => i.battingTeam === team);
   const result = match.result ?? state.result;
-  const href = match.status === 'live' ? `/match/${match.id}/score` : `/match/${match.id}`;
+  const { canScore } = useAuth();
+  const href = match.status === 'live' && canScore ? `/match/${match.id}/score` : `/match/${match.id}`;
   return (
     <Link to={href} className="match-card">
       <div className="row">
@@ -47,7 +49,7 @@ export function MatchCard({ match, nameOf }: { match: Match; nameOf: (id: string
       ) : (
         match.status === 'live' && (
           <div className="result" style={{ color: 'var(--accent)' }}>
-            {state.phase === 'break' ? 'Innings break' : 'In progress'} — tap to resume
+            {state.phase === 'break' ? 'Innings break' : 'In progress'} — tap to {canScore ? 'resume' : 'follow live'}
           </div>
         )
       )}

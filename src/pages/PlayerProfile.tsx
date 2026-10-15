@@ -12,6 +12,7 @@ import {
   computeCareerStats,
 } from '../engine/stats';
 import { impactGrade } from '../engine/impact';
+import { useAuth } from '../data/auth';
 import type { Player, PlayerRole } from '../types';
 
 const ROLES: PlayerRole[] = ['Batter', 'Bowler', 'All-rounder', 'Wicket-keeper'];
@@ -90,6 +91,7 @@ export default function PlayerProfile() {
   const [tab, setTab] = useState<'bat' | 'bowl' | 'field'>('bat');
   const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
+  const { canScore } = useAuth();
   const player = id ? map.get(id) : undefined;
   if (!player) return <AppBar title="Player" back="/players" />;
   const s = stats.get(player.id);
@@ -124,9 +126,11 @@ export default function PlayerProfile() {
         title={player.name}
         back="/players"
         right={
-          <button className="icon-btn" onClick={() => setEditing(true)} aria-label="Edit">
-            ✏️
-          </button>
+          canScore ? (
+            <button className="icon-btn" onClick={() => setEditing(true)} aria-label="Edit">
+              ✏️
+            </button>
+          ) : undefined
         }
       />
       <div className="score-hero" style={{ justifyItems: 'center', textAlign: 'center' }}>
@@ -269,6 +273,7 @@ export default function PlayerProfile() {
           </div>
         )}
 
+        {canScore && (
         <div className="row wrap">
           <button className="btn sm" onClick={() => setMerging(true)}>
             Merge duplicate…
@@ -277,6 +282,7 @@ export default function PlayerProfile() {
             Delete
           </button>
         </div>
+        )}
       </div>
 
       {editing && (

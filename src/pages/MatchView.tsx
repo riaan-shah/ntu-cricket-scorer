@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ScorecardExport, topBatters, topBowlers } from '../components/ScorecardExport';
 import { AppBar, Avatar, BallChip, Sheet, toast } from '../components/ui';
 import { deleteMatch, saveMatch, useMatch, usePlayerNames, useSettings } from '../db';
+import { useAuth } from '../data/auth';
 import { computeMatch, oversText } from '../engine/engine';
 import { ballNumber, commentary } from '../engine/format';
 import { computeMvp } from '../engine/impact';
@@ -19,6 +20,7 @@ export default function MatchView() {
   const match = useMatch(id);
   const { nameOf } = usePlayerNames();
   const settings = useSettings();
+  const { canScore } = useAuth();
   const [tab, setTab] = useState<Tab>('summary');
   const [busy, setBusy] = useState(false);
   const [motmOpen, setMotmOpen] = useState(false);
@@ -82,7 +84,7 @@ export default function MatchView() {
       <div className="page">
         {/* Export bar */}
         <div className="row wrap no-print">
-          {match.status === 'live' && (
+          {match.status === 'live' && canScore && (
             <Link className="btn primary" to={`/match/${match.id}/score`}>
               ▶ Resume scoring
             </Link>
@@ -132,7 +134,7 @@ export default function MatchView() {
                 }}
                 players={mvp.players}
                 nameOf={nameOf}
-                onChangePotm={match.status === 'completed' ? () => setMotmOpen(true) : undefined}
+                onChangePotm={match.status === 'completed' && canScore ? () => setMotmOpen(true) : undefined}
               />
             )}
 
@@ -208,6 +210,7 @@ export default function MatchView() {
               ))}
             </div>
 
+            {canScore && (
             <div className="row wrap no-print">
               {match.status !== 'live' && (
                 <button className="btn sm" onClick={reopen}>
@@ -218,6 +221,7 @@ export default function MatchView() {
                 Delete match
               </button>
             </div>
+            )}
           </>
         )}
 
