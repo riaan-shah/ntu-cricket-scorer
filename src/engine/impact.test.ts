@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BallEvent, Match } from '../types';
 import { computeMatch, DEFAULT_RULES } from './engine';
-import { computeMvp, impactGrade, pickHeroes, pressureIndex, pressureLabel, type PlayerImpact } from './impact';
+import { clubPar, computeMvp, impactGrade, pickHeroes, pressureIndex, pressureLabel, type PlayerImpact } from './impact';
 
 const chase = (runs: number, wickets: number, legalBalls: number) =>
   pressureIndex({ runs, wickets, legalBalls, maxBalls: 120, maxWickets: 10, target: 161, par: 1.33 });
@@ -136,6 +136,8 @@ describe('heroes of the match', () => {
     total: batting + bowling,
     battingPressure: null,
     bowlingPressure: null,
+    pressureRuns: 0,
+    ballsFaced: 0,
     summary: '',
   });
   const m = match();
@@ -152,8 +154,86 @@ describe('heroes of the match', () => {
     expect(pickHeroes(m, ranked, { winner: 0, text: '' }).fighter).toBe('b2');
   });
 
+  it('only gives Fighter to a positive contribution', () => {
+    const ranked = [p('a1', 9, 0), p('a2', 5, 0), p('b1', -3, 0)];
+    expect(pickHeroes(m, ranked, { winner: 0, text: '' }).fighter).toBeUndefined();
+  });
+
   it('has no fighter in a tie', () => {
     const ranked = [p('b1', 9, 0), p('a1', 5, 0)];
     expect(pickHeroes(m, ranked, { winner: null, text: 'Match tied' })).toMatchObject({ potm: 'b1', fighter: undefined });
+  });
+});
+
+describe('wicket shock (Shah & Shah 2014)', () => {
+  // Recreates the paper's example: chasing 158 in a T20, an early wicket, then 4, 6, 6.
+  function t20Chase(): Match {
+    const a = Array.from({ length: 11 }, (_, i) => `a${i}`);
+    const b = Array.from({ length: 11 }, (_, i) => `b${i}`);
+    const first: BallEvent[] = [];
+    for (let i = 0; i < 26; i++) first.push(ball('a0', 'a1', 'b10', 6));
+    first.push(ball('a0', 'a1', 'b10', 1));
+    const chase = [1, 0, 1, 0].map((r, i) => ball(i % 2 ? 'b1' : 'b0', i % 2 ? 'b0' : 'b1', 'a10', r));
+    return {
+      ...match(),
+      teams: [
+        { name: 'India', playerIds: a },
+        { name: 'Pakistan', playerIds: b },
+      ],
+      rules: { ...DEFAULT_RULES, overs: 20, rebatWhenShort: false },
+      innings: [
+        {
+          battingTeam: 0,
+          events: [{ kind: 'start', ts: 0, strikerId: 'a0', nonStrikerId: 'a1', bowlerId: 'b10' }, ...first, { kind: 'declare', ts: 0 }],
+        },
+        {
+          battingTeam: 1,
+          events: [
+            { kind: 'start', ts: 0, strikerId: 'b0', nonStrikerId: 'b1', bowlerId: 'a10' },
+            ...chase,
+            ball('b0', 'b1', 'a10', 0, { wicket: { type: 'bowled', playerOutId: 'b0' } }),
+            { kind: 'newBatter', ts: 0, playerId: 'b2' },
+            ...[2, 4, 6, 6, 0].map((r) => ball('b2', 'b1', 'a10', r)),
+          ],
+        },
+      ],
+    };
+  }
+
+  it('spikes on an early wicket and eases as runs repay it', () => {
+    const m = t20Chase();
+    const state = computeMatch(m);
+    expect(state.innings[1].target).toBe(158);
+    const pi = computeMvp(m, state).pressure[1].map((p) => p.pi);
+    const beforeWicket = pi[4];
+    const afterWicket = pi[5];
+    const afterBigHits = pi[9]; // after 2, 4, 6, 6
+    expect(afterWicket - beforeWicket).toBeGreaterThanOrEqual(5);
+    expect(afterBigHits).toBeLessThan(afterWicket);
+  });
+});
+
+describe('club par from history', () => {
+  const completed = (id: string, venue: string, runs: number, date: string): Match => {
+    const m = match();
+    m.id = id;
+    m.venue = venue;
+    m.date = date;
+    m.status = 'completed';
+    m.rules = { ...DEFAULT_RULES, overs: 1 };
+    const evs: BallEvent[] = [];
+    for (let i = 0; i < 6; i++) evs.push(ball('a1', 'a2', 'b1', i < runs / 2 ? 2 : 0));
+    m.innings = [{ battingTeam: 0, events: [{ kind: 'start', ts: 0, strikerId: 'a1', nonStrikerId: 'a2', bowlerId: 'b1' }, ...evs] }];
+    return m;
+  };
+
+  it('needs 3 earlier matches, prefers the same venue, and ignores later matches', () => {
+    const now = { ...match(), venue: 'Cage', date: '2026-10-20' };
+    const history = [completed('1', 'Cage', 12, '2026-10-01'), completed('2', 'Cage', 6, '2026-10-02')];
+    expect(clubPar(history, now)).toBeUndefined();
+    history.push(completed('3', 'Cage', 6, '2026-10-03'), completed('4', 'Field', 0, '2026-10-04'));
+    expect(clubPar(history, now)).toBeCloseTo(24 / 18); // same-venue only
+    history.push(completed('5', 'Cage', 12, '2026-10-30')); // after this match — ignored
+    expect(clubPar(history, now)).toBeCloseTo(24 / 18);
   });
 });

@@ -23,9 +23,9 @@ function formatDate(d: string) {
 /** Shareable "Match Summary" graphic. Fixed 960px wide, self-contained colours. */
 export const SummaryCard = forwardRef<
   HTMLDivElement,
-  { match: Match; state: MatchState; nameOf: NameOf; clubName: string; tagline: string }
->(function SummaryCard({ match, state, nameOf, clubName, tagline }, ref) {
-  const mvp = useMemo(() => computeMvp(match, state), [match, state]);
+  { match: Match; state: MatchState; nameOf: NameOf; clubName: string; tagline: string; clubPar?: number }
+>(function SummaryCard({ match, state, nameOf, clubName, tagline, clubPar }, ref) {
+  const mvp = useMemo(() => computeMvp(match, state, { clubPar }), [match, state, clubPar]);
   const result = match.result ?? state.result;
   const motm = result ? (match.motmId ?? mvp.heroes.potm) : undefined;
 

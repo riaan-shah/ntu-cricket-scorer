@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AppBar, BallChip, Sheet, toast } from '../../components/ui';
-import { saveMatch, useMatchWithMeta, usePlayerNames } from '../../db';
+import { saveMatch, useClubPar, useMatchWithMeta, usePlayerNames } from '../../db';
 import { useAuth } from '../../data/auth';
 import {
   computeMatch,
@@ -45,6 +45,7 @@ export default function Scoring() {
   const nav = useNavigate();
   const { match: stored, meta } = useMatchWithMeta(id);
   const auth = useAuth();
+  const clubParRate = useClubPar(stored);
   const { players, nameOf } = usePlayerNames();
   const [match, setMatch] = useState<Match | null>(null);
   const matchRef = useRef<Match | null>(null);
@@ -145,7 +146,7 @@ export default function Scoring() {
   const bowlerLine = cur.bowlers.find((b) => b.playerId === (cur.bowlerId ?? cur.lastOverBowlerId));
 
   const forced = live && !hideForced ? cur.needs : null;
-  const pressure = currentPressure(match, state);
+  const pressure = currentPressure(match, state, clubParRate);
   const closeForced = () => setHideForced(true);
 
   return (
@@ -207,7 +208,9 @@ export default function Scoring() {
       {live && cur.freeHit && <div className="free-hit">FREE HIT</div>}
 
       {state.phase === 'break' && <InningsBreak match={match} ctx={ctx} onChangeOvers={() => setSheet('overs')} />}
-      {state.phase === 'result' && <MatchOver match={match} ctx={ctx} onChangeOvers={() => setSheet('overs')} />}
+      {state.phase === 'result' && (
+        <MatchOver match={match} ctx={ctx} clubPar={clubParRate} onChangeOvers={() => setSheet('overs')} />
+      )}
 
       {live && (
         <div className="page" style={{ paddingTop: 12 }}>
@@ -534,9 +537,19 @@ function InningsBreak({ match, ctx, onChangeOvers }: { match: Match; ctx: Scorin
   );
 }
 
-function MatchOver({ match, ctx, onChangeOvers }: { match: Match; ctx: ScoringCtx; onChangeOvers: () => void }) {
+function MatchOver({
+  match,
+  ctx,
+  clubPar,
+  onChangeOvers,
+}: {
+  match: Match;
+  ctx: ScoringCtx;
+  clubPar?: number;
+  onChangeOvers: () => void;
+}) {
   const nav = useNavigate();
-  const mvp = useMemo(() => computeMvp(match, ctx.state), [match, ctx.state]);
+  const mvp = useMemo(() => computeMvp(match, ctx.state, { clubPar }), [match, ctx.state, clubPar]);
   const [motm, setMotm] = useState<string | undefined>(mvp.heroes.potm);
   const finish = () => {
     ctx.mutate((m) => ({ ...m, status: 'completed', result: ctx.state.result!, motmId: motm }));

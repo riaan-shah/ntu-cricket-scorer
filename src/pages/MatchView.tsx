@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ScorecardExport, topBatters, topBowlers } from '../components/ScorecardExport';
 import { AppBar, Avatar, BallChip, Sheet, toast } from '../components/ui';
-import { deleteMatch, saveMatch, useMatch, usePlayerNames, useSettings } from '../db';
+import { deleteMatch, saveMatch, useClubPar, useMatch, usePlayerNames, useSettings } from '../db';
 import { useAuth } from '../data/auth';
 import { computeMatch, oversText } from '../engine/engine';
 import { ballNumber, commentary } from '../engine/format';
@@ -27,7 +27,11 @@ export default function MatchView() {
   const exportRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const state = useMemo(() => (match ? computeMatch(match) : null), [match]);
-  const mvp = useMemo(() => (match && state ? computeMvp(match, state) : null), [match, state]);
+  const clubParRate = useClubPar(match);
+  const mvp = useMemo(
+    () => (match && state ? computeMvp(match, state, { clubPar: clubParRate }) : null),
+    [match, state, clubParRate],
+  );
 
   if (match === null) return <AppBar title="Match not found" back="/matches" />;
   if (!match || !state || !mvp) return null;
@@ -51,7 +55,7 @@ export default function MatchView() {
     setTimeout(() => window.print(), 150);
   };
   const copyText = async () => {
-    const text = textSummary(match, state, nameOf, settings.clubName);
+    const text = textSummary(match, state, nameOf, settings.clubName, clubParRate);
     try {
       await navigator.clipboard.writeText(text);
       toast('Summary copied — paste it in WhatsApp');
@@ -106,7 +110,7 @@ export default function MatchView() {
         {tab === 'summary' && (
           <>
             <ScaledPreview width={960}>
-              <SummaryCard match={match} state={state} nameOf={nameOf} clubName={settings.clubName} tagline={settings.exportTagline} />
+              <SummaryCard match={match} state={state} nameOf={nameOf} clubName={settings.clubName} tagline={settings.exportTagline} clubPar={clubParRate} />
             </ScaledPreview>
             <div className="card card-pad stack">
               <div className="row">
@@ -301,13 +305,13 @@ export default function MatchView() {
         )}
 
         {tab === 'scorecard' && (
-          <ScorecardExport match={match} state={state} nameOf={nameOf} clubName={settings.clubName} />
+          <ScorecardExport match={match} state={state} nameOf={nameOf} clubName={settings.clubName} clubPar={clubParRate} />
         )}
       </div>
 
       {/* Fixed-width off-screen copies used for image export, so shared images look the same from any device. */}
       <div className="no-print" style={{ position: 'fixed', left: -10000, top: 0, width: 720 }} aria-hidden>
-        <ScorecardExport ref={exportRef} match={match} state={state} nameOf={nameOf} clubName={settings.clubName} />
+        <ScorecardExport ref={exportRef} match={match} state={state} nameOf={nameOf} clubName={settings.clubName} clubPar={clubParRate} />
       </div>
       <div className="no-print" style={{ position: 'fixed', left: -12000, top: 0, width: 960 }} aria-hidden>
         <SummaryCard
@@ -317,6 +321,7 @@ export default function MatchView() {
           nameOf={nameOf}
           clubName={settings.clubName}
           tagline={settings.exportTagline}
+          clubPar={clubParRate}
         />
       </div>
 

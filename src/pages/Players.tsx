@@ -40,7 +40,7 @@ export default function Players() {
   const exportCsv = () => {
     const rows: (string | number)[][] = [
       ['Player', 'Matches', 'Won', 'POTM', 'Inns', 'Runs', 'Balls', 'HS', 'Avg', 'SR', '4s', '6s', '30s', '50s', 'Ducks',
-        'Overs', 'Wkts', 'Runs conceded', 'Econ', 'Best', 'Catches', 'Run outs', 'Stumpings', 'Out of cage', 'Total impact', 'Avg impact', 'Best batter', 'Best bowler', 'Fighter'],
+        'Overs', 'Wkts', 'Runs conceded', 'Econ', 'Best', 'Catches', 'Run outs', 'Stumpings', 'Out of cage', 'Total impact', 'Avg impact', 'Best batter', 'Best bowler', 'Fighter', 'Pressure runs', 'Avg pressure faced'],
     ];
     for (const p of players) {
       const s = stats.get(p.id);
@@ -54,7 +54,7 @@ export default function Players() {
         s.bat.fours, s.bat.sixes, s.bat.thirties, s.bat.fifties, s.bat.ducks,
         `${Math.floor(s.bowl.balls / 6)}.${s.bowl.balls % 6}`, s.bowl.wickets, s.bowl.runs, bowlEconomy(s.bowl),
         s.bowl.innings ? `${s.bowl.bestW}/${s.bowl.bestR}` : '-', s.catches, s.runOuts, s.stumpings, s.outOfCage, s.impact,
-        s.impactMatches ? (s.impact / s.impactMatches).toFixed(1) : '-', s.bestBatter, s.bestBowler, s.fighter,
+        s.impactMatches ? (s.impact / s.impactMatches).toFixed(1) : '-', s.bestBatter, s.bestBowler, s.fighter, s.pressureRuns, s.avgPressureFaced ?? '-',
       ]);
     }
     downloadText(toCsv(rows), `ntu-cricket-player-stats-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv');

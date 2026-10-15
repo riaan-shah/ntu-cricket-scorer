@@ -42,10 +42,24 @@ export function impactGrade(score: number): string {
 
 // ---------- Pressure Index ----------
 
-/** Club default scoring rate (runs per ball) used before a match has enough balls to judge conditions. */
+/** Club default scoring rate (runs per ball) used until there's match history to learn from. */
 export const DEFAULT_PAR = 1.3;
-/** How many balls of evidence the default par is worth. */
+/** How many balls of evidence the prior par is worth when blending with the current match. */
 const PAR_PRIOR_BALLS = 36;
+/** Completed matches needed before the club's own history replaces the default par. */
+const CLUB_PAR_MIN_MATCHES = 3;
+/** Pressure of 65+ ("High" or "Extreme") counts as batting under pressure. */
+export const HIGH_PRESSURE = 65;
+
+/*
+ * Wicket shock, after Shah & Shah, "Pressure Index in Cricket" (IOSR-JSPE 1(5), 2014): a wicket adds pressure that is
+ * larger when many runs are still needed and many balls remain, and the batting side then "pays it off" with the runs
+ * it scores afterwards. In their 2007 WT20 final example the first wicket adds ~0.29 to the required-rate ratio and
+ * each run repays ~1/158 of the target; we express both relative to the target so they scale to short cage games.
+ */
+const SHOCK_PER_WICKET = 0.3;
+const SHOCK_PAYOFF_PER_RUN = 1.6; // shock repaid per run = 1.6 / goal
+const SHOCK_MAX = 0.8;
 
 export interface PressureInput {
   runs: number;
@@ -58,6 +72,8 @@ export interface PressureInput {
   target: number | null;
   /** Par scoring rate (runs per ball) for batting first. */
   par: number;
+  /** Unrepaid wicket shock (see above), in units of the difficulty ratio. */
+  shock?: number;
 }
 
 export function pressureIndex(s: PressureInput): number {
@@ -76,44 +92,102 @@ export function pressureIndex(s: PressureInput): number {
   const parRate = chasing ? Math.max(0.1, (s.target! - 1) / s.maxBalls) : s.par;
   const expected = ballsLeft * parRate * (1 + 0.3 * phase) * resource;
 
-  // Difficulty: runs needed vs runs this side can expect to make. 1 = exactly on par.
-  const difficulty = Math.max(0, needed) / Math.max(expected, 0.5);
+  // Difficulty: runs needed vs runs this side can expect to make (1 = exactly on par), plus any wicket shock.
+  const difficulty = Math.max(0, needed) / Math.max(expected, 0.5) + (s.shock ?? 0);
   let pi = 1 / (1 + Math.exp(-1.8 * (difficulty - 1)));
   pi *= 0.75 + 0.25 * phase; // pressure builds as the innings goes on
   if (!chasing) pi *= 0.85; // setting a total carries less pressure than chasing one
   return Math.round(Math.min(100, Math.max(0, pi * 100)));
 }
 
-/** Par rate for the match: club default blended with how the match is actually going. */
-export function matchPar(state: MatchState): number {
+/** Par rate for the match: the prior (club history or default) blended with how this match is actually going. */
+export function matchPar(state: MatchState, prior = DEFAULT_PAR): number {
   let runs = 0;
   let balls = 0;
   for (const inn of state.innings) {
     runs += inn.runs;
     balls += inn.legalBalls;
   }
-  return (DEFAULT_PAR * PAR_PRIOR_BALLS + runs) / (PAR_PRIOR_BALLS + balls);
+  return (prior * PAR_PRIOR_BALLS + runs) / (PAR_PRIOR_BALLS + balls);
+}
+
+// Keyed by id + updatedAt: synced match lists arrive as fresh objects on every ball.
+const firstInningsCache = new Map<string, { runs: number; balls: number } | null>();
+function firstInnings(m: Match) {
+  const key = `${m.id}:${m.updatedAt}`;
+  if (!firstInningsCache.has(key)) {
+    const first = computeMatch(m).innings[0];
+    firstInningsCache.set(key, first && first.legalBalls > 0 ? { runs: first.runs, balls: first.legalBalls } : null);
+  }
+  return firstInningsCache.get(key)!;
+}
+
+/**
+ * The club's real first-innings scoring rate (runs per ball) from completed matches played before match — the
+ * paper's "average score batting first on that ground". Uses the same venue when it has enough matches.
+ * undefined until the club has enough history.
+ */
+export function clubPar(matches: Match[], match?: Match): number | undefined {
+  const earlier = matches.filter(
+    (m) =>
+      m.status === 'completed' &&
+      m.id !== match?.id &&
+      (!match || m.date < match.date || (m.date === match.date && m.createdAt < match.createdAt)),
+  );
+  const sameVenue = match?.venue ? earlier.filter((m) => m.venue === match.venue) : [];
+  const pool = sameVenue.length >= CLUB_PAR_MIN_MATCHES ? sameVenue : earlier;
+  if (pool.length < CLUB_PAR_MIN_MATCHES) return undefined;
+  let runs = 0;
+  let balls = 0;
+  for (const m of pool) {
+    const f = firstInnings(m);
+    if (f) {
+      runs += f.runs;
+      balls += f.balls;
+    }
+  }
+  return balls > 0 ? runs / balls : undefined;
 }
 
 function maxWicketsFor(match: Match, inn: InningsState) {
   return Math.max(1, inn.battingTurns - (match.rules.lastManStands ? 0 : 1));
 }
 
-/** Pressure on the batting side right now (before the next ball). */
-export function currentPressure(match: Match, state: MatchState): number | null {
-  const inn = state.current;
-  if (!inn || !inn.started || inn.complete) return null;
-  return pressureIndex({
-    runs: inn.runs,
-    wickets: inn.wickets,
-    legalBalls: inn.legalBalls,
-    maxBalls: inn.maxBalls,
-    maxWickets: maxWicketsFor(match, inn),
-    target: inn.target,
-    par: matchPar(state),
-  });
+/** Pressure before every delivery of an innings (with wicket shock), plus the pressure before the next ball. */
+function inningsPressure(match: Match, inn: InningsState, par: number): { points: PressurePoint[]; next: number | null } {
+  const maxWickets = maxWicketsFor(match, inn);
+  const goal = Math.max(1, inn.target ?? par * inn.maxBalls);
+  let runs = 0;
+  let wickets = 0;
+  let legal = 0;
+  let shock = 0;
+  const pi = (r: number, w: number, l: number) =>
+    pressureIndex({ runs: r, wickets: w, legalBalls: l, maxBalls: inn.maxBalls, maxWickets, target: inn.target, par, shock });
+
+  const points: PressurePoint[] = [];
+  for (const b of inn.balls) {
+    points.push({ ball: legal, pi: pi(runs, wickets, legal), eventIndex: b.eventIndex });
+    // Runs scored repay earlier wicket shock; a wicket on this ball then adds new shock.
+    shock = Math.max(0, shock - ((b.scoreAfter.runs - runs) * SHOCK_PAYOFF_PER_RUN) / goal);
+    runs = b.scoreAfter.runs;
+    wickets = b.scoreAfter.wickets;
+    legal = b.legalBallsAfter;
+    if (b.event.wicket) {
+      const runsLeft = Math.max(0, goal - runs) / goal;
+      const ballsLeft = Math.max(0, inn.maxBalls - legal) / inn.maxBalls;
+      shock = Math.min(SHOCK_MAX, shock + SHOCK_PER_WICKET * runsLeft * ballsLeft);
+    }
+  }
+  const next = inn.started && !inn.complete ? pi(inn.runs, inn.wickets, inn.legalBalls) : null;
+  return { points, next };
 }
 
+/** Pressure on the batting side right now (before the next ball). */
+export function currentPressure(match: Match, state: MatchState, clubParRate?: number): number | null {
+  const inn = state.current;
+  if (!inn || !inn.started || inn.complete) return null;
+  return inningsPressure(match, inn, matchPar(state, clubParRate)).next;
+}
 // ---------- Impact Score ----------
 
 export interface PlayerImpact {
@@ -126,6 +200,9 @@ export interface PlayerImpact {
   battingPressure: number | null;
   /** Average pressure of the balls this player bowled. */
   bowlingPressure: number | null;
+  /** Runs off the bat scored at High/Extreme pressure (PI 65+) — the paper's "pressure runs". */
+  pressureRuns: number;
+  ballsFaced: number;
   summary: string;
 }
 
@@ -154,19 +231,26 @@ export interface MatchMvp {
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-export function computeMvp(match: Match, state: MatchState = computeMatch(match)): MatchMvp {
+export function computeMvp(
+  match: Match,
+  state: MatchState = computeMatch(match),
+  opts: { clubPar?: number } = {},
+): MatchMvp {
   const rules = match.rules;
-  const par = matchPar(state);
+  const par = matchPar(state, opts.clubPar);
   const maxBalls = rules.overs * rules.ballsPerOver;
   // One Impact point = 1/20th of a par innings, so the scale means the same in a 3-over cage game and a T20.
   // Calibrated so a 30 off 15 or 2/10 from 2 overs in a 6-over game grades about 'Excellent'.
   const unit = Math.max(1, par * maxBalls) / 20;
 
-  const acc = new Map<ID, { bat: number; bowl: number; field: number; batPi: number[]; bowlPi: number[] }>();
+  const acc = new Map<
+    ID,
+    { bat: number; bowl: number; field: number; batPi: number[]; bowlPi: number[]; pressureRuns: number }
+  >();
   const get = (id: ID) => {
     let a = acc.get(id);
     if (!a) {
-      a = { bat: 0, bowl: 0, field: 0, batPi: [], bowlPi: [] };
+      a = { bat: 0, bowl: 0, field: 0, batPi: [], bowlPi: [], pressureRuns: 0 };
       acc.set(id, a);
     }
     return a;
@@ -176,7 +260,7 @@ export function computeMvp(match: Match, state: MatchState = computeMatch(match)
   const pressureByBall = new Map<string, number>();
 
   for (const inn of state.innings) {
-    const points: PressurePoint[] = [];
+    const { points } = inningsPressure(match, inn, par);
     pressure.push(points);
     const maxWickets = maxWicketsFor(match, inn);
     const parRate = inn.target !== null ? Math.max(0.1, (inn.target - 1) / inn.maxBalls) : par;
@@ -184,24 +268,12 @@ export function computeMvp(match: Match, state: MatchState = computeMatch(match)
     const wicketValue = (0.9 * parRate * inn.maxBalls) / maxWickets;
     const setRuns = Math.max(8, parRate * inn.maxBalls * 0.15);
 
-    let runs = 0;
-    let wickets = 0;
-    let legal = 0;
     let partnership = 0;
     const batterRuns = new Map<ID, number>();
 
-    for (const b of inn.balls) {
+    inn.balls.forEach((b, i) => {
       const ev = b.event;
-      const pi = pressureIndex({
-        runs,
-        wickets,
-        legalBalls: legal,
-        maxBalls: inn.maxBalls,
-        maxWickets,
-        target: inn.target,
-        par,
-      });
-      points.push({ ball: legal, pi, eventIndex: b.eventIndex });
+      const pi = points[i].pi;
       pressureByBall.set(`${inn.index}:${b.eventIndex}`, pi);
       const mult = 0.6 + 0.9 * (pi / 100);
 
@@ -219,6 +291,7 @@ export function computeMvp(match: Match, state: MatchState = computeMatch(match)
         const s = get(ev.strikerId);
         s.bat += v * mult;
         s.batPi.push(pi);
+        if (pi >= HIGH_PRESSURE) s.pressureRuns += batRuns;
         batterRuns.set(ev.strikerId, (batterRuns.get(ev.strikerId) ?? 0) + batRuns);
       }
 
@@ -244,11 +317,7 @@ export function computeMvp(match: Match, state: MatchState = computeMatch(match)
       } else {
         partnership += b.totalRuns;
       }
-
-      runs = b.scoreAfter.runs;
-      wickets = b.scoreAfter.wickets;
-      legal = b.legalBallsAfter;
-    }
+    });
   }
 
   const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
@@ -266,6 +335,8 @@ export function computeMvp(match: Match, state: MatchState = computeMatch(match)
         total: round1(batting + bowling + fielding),
         battingPressure: avg(a.batPi),
         bowlingPressure: avg(a.bowlPi),
+        pressureRuns: a.pressureRuns,
+        ballsFaced: a.batPi.length,
         summary: summaries.get(playerId) ?? '',
       };
     })
@@ -293,7 +364,10 @@ export function pickHeroes(match: Match, players: PlayerImpact[], result: MatchR
   let fighter: ID | undefined;
   if (winner !== null) {
     const loser = (1 - winner) as TeamIdx;
-    fighter = top3.find((p) => inTeam(p.playerId, loser) && !inTeam(p.playerId, winner) && p.playerId !== potm)?.playerId;
+    // A fighter has to have actually made a positive contribution.
+    fighter = top3.find(
+      (p) => p.total > 0 && inTeam(p.playerId, loser) && !inTeam(p.playerId, winner) && p.playerId !== potm,
+    )?.playerId;
   }
   return { potm, bestBatter: best('batting'), bestBowler: best('bowling'), fighter };
 }

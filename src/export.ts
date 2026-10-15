@@ -44,6 +44,7 @@ export function textSummary(
   state: MatchState,
   nameOf: (id: string | undefined) => string,
   clubName: string,
+  clubPar?: number,
 ): string {
   const bpo = m.rules.ballsPerOver;
   const lines: string[] = [];
@@ -69,7 +70,7 @@ export function textSummary(
   const result = m.result ?? state.result;
   if (result) lines.push(`🏆 *${result.text}*`);
   if (result) {
-    const mvp = computeMvp(m, state);
+    const mvp = computeMvp(m, state, { clubPar });
     const potm = m.motmId ?? mvp.heroes.potm;
     const imp = (id?: string) => mvp.players.find((p) => p.playerId === id)?.total;
     if (potm) lines.push(`🏅 Player of the match: *${nameOf(potm)}* (impact ${imp(potm)})`);

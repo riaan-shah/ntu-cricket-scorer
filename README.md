@@ -71,11 +71,18 @@ publishes the factors and scales but not the formulas, so the maths in `src/engi
 **Pressure Index (0–100, before every ball)**: Calm 0–19 · Light 20–39 · Moderate 40–64 · High 65–79 · Extreme 80–100.
 - Chasing: runs needed vs the runs the side can expect from the balls left. The expectation is based on the target's
   required rate, scaled up for death overs and down for fewer wickets in hand.
-- Batting first: the same, measured against a par score. Par = club default (1.3 runs/ball) blended with how the match is
-  actually going, so it adapts to cage conditions and format. Batting first carries a little less pressure than chasing.
+- Batting first: the same, measured against a par score. Par comes from the **club's own history**: the average
+  first-innings scoring rate of earlier completed matches (same venue when it has 3+ matches). Before 3 matches exist it
+  uses a default of 1.3 runs per ball. Either way it's blended with how the current match is going. Batting first
+  carries a little less pressure than chasing.
+- **Wicket shock** (after Shah & Shah, *Pressure Index in Cricket*, IOSR-JSPE 1(5), 2014): a wicket adds extra
+  pressure. The extra is bigger when many runs are still needed and many balls remain, and the batters "pay it off" with
+  the runs they score afterwards. So pressure spikes on a wicket and eases as a new pair rebuilds. The paper's T20
+  constants are expressed relative to the target so they scale to short cage games.
 - Pressure builds through the innings (match phase). Shown live on the scoring screen, per ball in commentary, and as a
   graph on the match summary.
-
+- **Pressure runs**: runs off the bat scored at High/Extreme pressure (PI 65+), plus average pressure faced. Shown on
+  player profiles, in the stats spreadsheet, and on the leaderboard ("Runs under pressure", "Toughest conditions").
 **Impact Score (per player)**: every ball is valued in runs above par and multiplied by that ball's pressure
 (×0.6 when calm up to ×1.5 at extreme):
 - Batting: runs, boundary bonus, dot balls cost, getting out costs.
@@ -86,7 +93,7 @@ publishes the factors and scales but not the formulas, so the maths in `src/engi
 
 **Heroes of the Match** (CricHeroes rules): Player of the Match = the highest-ranked winning-team player in the top 3 MVPs
 (otherwise the MVP leader), and the scorer can override it. Best Batter / Best Bowler = highest batting / bowling impact.
-Fighter of the Match = the highest-ranked losing-team player in the top 3 who isn't Player of the Match.
+Fighter of the Match = the highest-ranked losing-team player in the top 3 who isn't Player of the Match and made a\npositive contribution.
 
 Not yet tracked (CricHeroes treats these as scorer-dependent too): runs saved and dropped catches.
 

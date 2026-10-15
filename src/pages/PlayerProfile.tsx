@@ -12,7 +12,7 @@ import {
   bowlStrikeRate,
   computeCareerStats,
 } from '../engine/stats';
-import { impactGrade } from '../engine/impact';
+import { impactGrade, pressureLabel } from '../engine/impact';
 import { useAuth } from '../data/auth';
 import type { Player, PlayerRole } from '../types';
 
@@ -179,6 +179,10 @@ export default function PlayerProfile() {
               ['Best bowler', s.bestBowler],
               ['Fighter', s.fighter],
               ['POTM', s.motm],
+              ['Pressure runs', s.pressureRuns],
+              ['Avg pressure faced', s.avgPressureFaced ?? '-'],
+              ['Pressure', s.avgPressureFaced !== null ? pressureLabel(s.avgPressureFaced) : '-'],
+              ['% runs under pressure', s.bat.runs ? `${Math.round((s.pressureRuns * 100) / s.bat.runs)}%` : '-'],
             ])}
           </div>
         )}

@@ -3,6 +3,7 @@ import type { Backend, MatchMeta } from './data/backend';
 import { cloudBackend, cloudEnabled } from './data/cloud';
 import { localBackend } from './data/local';
 import { DEFAULT_RULES } from './engine/engine';
+import { clubPar } from './engine/impact';
 import type { ClubSettings, ID, Match, Player } from './types';
 
 /** Cloud (shared club database) when Firebase is configured, otherwise this device only. */
@@ -231,6 +232,20 @@ export function useSettings(): ClubSettings {
     }),
     [saved],
   );
+}
+
+/** The club's historical batting-first scoring rate going into match (undefined until there's enough history). */
+export function useClubPar(match: Match | null | undefined): number | undefined {
+  const matches = useMatches();
+  // Only the identity/date/venue matter, not every ball of the live match.
+  const id = match?.id;
+  const date = match?.date;
+  const venue = match?.venue;
+  const createdAt = match?.createdAt;
+  return useMemo(() => {
+    if (!matches || !id || !date || createdAt === undefined) return undefined;
+    return clubPar(matches, { id, date, venue, createdAt } as Match);
+  }, [matches, id, date, venue, createdAt]);
 }
 
 export function sortMatches(a: Match, b: Match) {

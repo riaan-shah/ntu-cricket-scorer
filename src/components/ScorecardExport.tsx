@@ -24,11 +24,11 @@ export function topBowlers(inn: InningsState, n = 2) {
 /** A classic cricket scorecard. Self-contained colours so it exports/prints identically in dark mode. */
 export const ScorecardExport = forwardRef<
   HTMLDivElement,
-  { match: Match; state: MatchState; nameOf: NameOf; clubName: string }
->(function ScorecardExport({ match, state, nameOf, clubName }, ref) {
+  { match: Match; state: MatchState; nameOf: NameOf; clubName: string; clubPar?: number }
+>(function ScorecardExport({ match, state, nameOf, clubName, clubPar }, ref) {
   const bpo = match.rules.ballsPerOver;
   const result = match.result ?? state.result;
-  const mvp = useMemo(() => computeMvp(match, state), [match, state]);
+  const mvp = useMemo(() => computeMvp(match, state, { clubPar }), [match, state, clubPar]);
   const potm = match.motmId ?? (result ? mvp.heroes.potm : undefined);
   const impact = new Map(mvp.players.map((p) => [p.playerId, p]));
   const heroes = result

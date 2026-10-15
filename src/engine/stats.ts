@@ -1,6 +1,6 @@
 import type { ID, Match } from '../types';
 import { computeMatch, type InningsState } from './engine';
-import { computeMvp } from './impact';
+import { clubPar, computeMvp } from './impact';
 
 // ---------- Career stats ----------
 
@@ -58,6 +58,13 @@ export interface CareerStats {
   /** Matches with an Impact Score (i.e. took part in play). */
   impactMatches: number;
   bestImpact: number;
+  /** Runs off the bat at High/Extreme pressure (PI 65+). */
+  pressureRuns: number;
+  /** Average Pressure Index of every ball faced (null if none). */
+  avgPressureFaced: number | null;
+  /** Internal running totals for avgPressureFaced. */
+  pressureFacedSum: number;
+  pressureFacedBalls: number;
   bat: BattingCareer;
   bowl: BowlingCareer;
   catches: number;
@@ -80,6 +87,10 @@ function emptyStats(playerId: ID): CareerStats {
     impact: 0,
     impactMatches: 0,
     bestImpact: 0,
+    pressureRuns: 0,
+    avgPressureFaced: null,
+    pressureFacedSum: 0,
+    pressureFacedBalls: 0,
     bat: {
       innings: 0,
       notOuts: 0,
@@ -132,8 +143,18 @@ export function computeCareerStats(matches: Match[]): Map<ID, CareerStats> {
 
   for (const m of counted) {
     const state = computeMatch(m);
-    const mvp = computeMvp(m, state);
+    // Par for each match = the club's history going into that match, so old MVPs don't shift later.
+    const mvp = computeMvp(m, state, { clubPar: clubPar(matches, m) });
     const impactOf = new Map(mvp.players.map((p) => [p.playerId, p.total]));
+    for (const p of mvp.players) {
+      const s = get(p.playerId);
+      s.pressureRuns += p.pressureRuns;
+      if (p.battingPressure !== null && p.ballsFaced > 0) {
+        s.pressureFacedSum += p.battingPressure * p.ballsFaced;
+        s.pressureFacedBalls += p.ballsFaced;
+        s.avgPressureFaced = Math.round(s.pressureFacedSum / s.pressureFacedBalls);
+      }
+    }
     const motmId = m.motmId ?? mvp.heroes.potm;
     const perf = new Map<ID, MatchPerformance>();
     const [teamA, teamB] = m.teams;
