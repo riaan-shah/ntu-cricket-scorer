@@ -96,12 +96,20 @@ async function main() {
   await setStatus({ ok: true, counts, commit, message: unchanged ? 'No changes this week' : `Saved ${commit}` });
 }
 
-main().catch(async (e) => {
-  console.error(e);
-  try {
-    await setStatus({ ok: false, message: String(e?.message ?? e).slice(0, 300) });
-  } catch {
-    // Can't reach the database either; the workflow failure email is the alert.
-  }
-  process.exit(1);
-});
+// The Firestore client keeps a network connection open after the work is done, which would leave the job running
+// until it times out. Close it and exit explicitly.
+main()
+  .then(async () => {
+    await db.terminate();
+    console.log('Backup finished.');
+    process.exit(0);
+  })
+  .catch(async (e) => {
+    console.error(e);
+    try {
+      await setStatus({ ok: false, message: String(e?.message ?? e).slice(0, 300) });
+    } catch {
+      // Can't reach the database either; the workflow failure email is the alert.
+    }
+    process.exit(1);
+  });
