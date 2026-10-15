@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NewPlayerInline, PlayerPickList, type PickOption } from '../../components/PlayerPick';
 import { OversPicker } from '../../components/OversPicker';
 import { RulesEditor } from '../../components/RulesEditor';
-import { Seg, Sheet, ToggleRow, toast } from '../../components/ui';
+import { askConfirm, Seg, Sheet, ToggleRow, toast } from '../../components/ui';
 import {
   allowedOnFreeHit,
   oversText,
@@ -165,7 +165,9 @@ export function BatterSheet({ ctx, onClose }: { ctx: ScoringCtx; onClose: () => 
         <button
           className="btn"
           onClick={() => {
-            if (confirm(`End ${bat.name}'s innings now?`)) ctx.append({ kind: 'declare', ts: Date.now() });
+            void askConfirm({ title: `End ${bat.name}'s innings now?`, confirmLabel: 'End innings' }).then(
+              (ok) => ok && ctx.append({ kind: 'declare', ts: Date.now() }),
+            );
           }}
         >
           End innings

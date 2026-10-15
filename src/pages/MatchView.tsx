@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ScorecardExport, topBatters, topBowlers } from '../components/ScorecardExport';
-import { AppBar, Avatar, BallChip, Sheet, toast } from '../components/ui';
+import { AppBar, askConfirm, Avatar, BallChip, Sheet, toast } from '../components/ui';
 import { deleteMatch, saveMatch, useClubPar, useMatch, usePlayerNames, useSettings } from '../db';
 import { useAuth } from '../data/auth';
 import { computeMatch, oversText } from '../engine/engine';
@@ -64,13 +64,32 @@ export default function MatchView() {
     }
   };
   const reopen = async () => {
-    if (!confirm('Reopen this match for editing? Stats will update when you finish it again.')) return;
+    const ok = await askConfirm({
+      title: 'Reopen this match?',
+      message: 'You can correct the scoring. Stats update when you finish it again.',
+      confirmLabel: 'Reopen',
+    });
+    if (!ok) return;
     await saveMatch({ ...match, status: 'live', result: undefined });
     nav(`/match/${match.id}/score`);
   };
   const remove = async () => {
-    if (!confirm('Delete this match permanently? Player stats from it will be removed.')) return;
+    const ok = await askConfirm({
+      title: 'Delete this match?',
+      message: (
+        <>
+          <b>
+            {match.teams[0].name} v {match.teams[1].name}
+          </b>{' '}
+          ({match.date}) will be removed for everyone, along with the player stats from it. This can't be undone.
+        </>
+      ),
+      confirmLabel: 'Delete match',
+      danger: true,
+    });
+    if (!ok) return;
     await deleteMatch(match.id);
+    toast('Match deleted');
     nav('/matches', { replace: true });
   };
 

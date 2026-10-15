@@ -33,7 +33,7 @@ export default function Settings() {
       const res = await importBackup(data);
       toast(`Imported ${res.players} player(s) and ${res.matches} match(es)`);
     } catch (e) {
-      alert(`Import failed: ${(e as Error).message}`);
+      toast(`Import failed: ${(e as Error).message}`);
     }
   };
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { AppBar, BallChip, Sheet, toast } from '../../components/ui';
-import { saveMatch, useClubPar, useMatchWithMeta, usePlayerNames } from '../../db';
+import { AppBar, askConfirm, BallChip, Sheet, toast } from '../../components/ui';
+import { deleteMatch, saveMatch, useClubPar, useMatchWithMeta, usePlayerNames } from '../../db';
 import { useAuth } from '../../data/auth';
 import {
   computeMatch,
@@ -405,7 +405,8 @@ export default function Scoring() {
                 ['⚙️ Match settings', 'settings', true],
                 ['🏁 End innings now', 'declare', live && cur.started],
                 ['📋 View full scorecard', 'scorecard', true],
-                ['🗑 Abandon match', 'abandon', true],
+                ['🚫 Abandon match (keep in history)', 'abandon', true],
+                ['🗑 Delete match', 'delete', true],
               ] as const
             ).map(([label, action, enabled]) => (
               <button
@@ -419,16 +420,37 @@ export default function Scoring() {
                       append({ kind: 'swap', ts: Date.now() });
                       break;
                     case 'declare':
-                      if (confirm(`End ${batTeam.name}'s innings now?`)) append({ kind: 'declare', ts: Date.now() });
+                      void askConfirm({ title: `End ${batTeam.name}'s innings now?`, confirmLabel: 'End innings' }).then(
+                        (ok) => ok && append({ kind: 'declare', ts: Date.now() }),
+                      );
                       break;
                     case 'scorecard':
                       nav(`/match/${match.id}`);
                       break;
                     case 'abandon':
-                      if (confirm('Abandon this match? It will be kept in history but not count towards stats.')) {
+                      void askConfirm({
+                        title: 'Abandon this match?',
+                        message: "It stays in match history marked 'abandoned' but doesn't count towards anyone's stats.",
+                        confirmLabel: 'Abandon',
+                        danger: true,
+                      }).then((ok) => {
+                        if (!ok) return;
                         mutate((m) => ({ ...m, status: 'abandoned', result: { winner: null, text: 'Match abandoned' } }));
                         nav(`/match/${match.id}`);
-                      }
+                      });
+                      break;
+                    case 'delete':
+                      void askConfirm({
+                        title: 'Delete this match?',
+                        message: `${match.teams[0].name} v ${match.teams[1].name} will be removed for everyone, including every ball scored so far. This can't be undone.`,
+                        confirmLabel: 'Delete match',
+                        danger: true,
+                      }).then(async (ok) => {
+                        if (!ok) return;
+                        await deleteMatch(match.id);
+                        toast('Match deleted');
+                        nav('/', { replace: true });
+                      });
                       break;
                     default:
                       setSheet(action);

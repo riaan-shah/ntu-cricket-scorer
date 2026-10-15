@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { ToastHost } from './components/ui';
+import { ConfirmHost, ToastHost } from './components/ui';
 import Home from './pages/Home';
 import Leaderboard from './pages/Leaderboard';
 import Matches from './pages/Matches';
@@ -38,6 +38,7 @@ export default function App() {
         </Routes>
       </div>
       <ToastHost />
+      <ConfirmHost />
     </HashRouter>
   );
 }

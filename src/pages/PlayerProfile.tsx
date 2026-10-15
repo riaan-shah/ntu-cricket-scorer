@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PlayerPickList } from '../components/PlayerPick';
-import { AppBar, Avatar, Seg, Sheet, toast } from '../components/ui';
+import { AppBar, askConfirm, Avatar, Seg, Sheet, toast } from '../components/ui';
 import { mergePlayers, playersWithHistory, restorePlayer, savePlayer, useMatches, usePlayerNames } from '../db';
 import { RemoveConfirm } from './Players';
 import {
@@ -334,7 +334,13 @@ export default function PlayerProfile() {
             options={players.filter((p) => p.id !== player.id && !p.archived).map((p) => ({ id: p.id }))}
             nameOf={nameOf}
             onPick={async (into) => {
-              if (!confirm(`Merge ${player.name} into ${nameOf(into)}? This can't be undone.`)) return;
+              const ok = await askConfirm({
+                title: `Merge ${player.name} into ${nameOf(into)}?`,
+                message: `All of ${player.name}'s matches and stats move to ${nameOf(into)}. This can't be undone.`,
+                confirmLabel: 'Merge',
+                danger: true,
+              });
+              if (!ok) return;
               await mergePlayers(player.id, into);
               toast('Players merged');
               nav(`/players/${into}`, { replace: true });

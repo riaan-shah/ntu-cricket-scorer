@@ -217,3 +217,48 @@ export function ToastHost() {
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
+
+// ---------- Confirm dialog ----------
+// In-app replacement for window.confirm(), which some browsers block silently (in-app browsers such as WhatsApp's,
+// some installed web apps) — there it returns false without showing anything, so the action just never happens.
+
+export interface ConfirmOptions {
+  title: string;
+  message?: ReactNode;
+  confirmLabel?: string;
+  danger?: boolean;
+}
+
+let openConfirm: ((o: ConfirmOptions) => Promise<boolean>) | null = null;
+
+export function askConfirm(o: ConfirmOptions): Promise<boolean> {
+  return openConfirm ? openConfirm(o) : Promise.resolve(window.confirm(o.title));
+}
+
+export function ConfirmHost() {
+  const [req, setReq] = useState<{ o: ConfirmOptions; resolve: (v: boolean) => void } | null>(null);
+  useEffect(() => {
+    openConfirm = (o) => new Promise<boolean>((resolve) => setReq({ o, resolve }));
+    return () => {
+      openConfirm = null;
+    };
+  }, []);
+  if (!req) return null;
+  const done = (v: boolean) => {
+    req.resolve(v);
+    setReq(null);
+  };
+  return (
+    <Sheet open title={req.o.title} onClose={() => done(false)}>
+      {req.o.message && <div className="small">{req.o.message}</div>}
+      <div className="grid-2">
+        <button className="btn" onClick={() => done(false)}>
+          Cancel
+        </button>
+        <button className={`btn ${req.o.danger ? 'danger' : 'primary'}`} onClick={() => done(true)} autoFocus>
+          {req.o.confirmLabel ?? 'OK'}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
